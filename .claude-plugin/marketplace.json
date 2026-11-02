@@ -1,0 +1,14 @@
+{
+  "name": "sdd-flow-marketplace",
+  "description": "Marketplace for the sdd-flow tiered spec-driven-development plugin",
+  "owner": {
+    "name": "Alessandro Vitali"
+  },
+  "plugins": [
+    {
+      "name": "sdd-flow",
+      "source": "./",
+      "description": "A tiered, configurable spec-driven-development workflow: mechanical changes, bugfixes, and features each pay only the review ceremony they actually need."
+    }
+  ]
+}

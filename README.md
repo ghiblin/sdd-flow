@@ -35,7 +35,15 @@ Classification happens once per intent (and once per split-off piece, if `sdd-fl
 
 ## Installing
 
-Add this plugin to a project, then run its `sdd-flow-init` skill once to create the GitHub labels (`sdd:*`) and record the project's source directories. Launch the orchestrator as the main session:
+From inside the target project, on Claude Code 2.1.275 or later:
+
+```
+/plugin install sdd-flow --marketplace ghiblin/sdd-flow
+```
+
+(Older Claude Code: `/plugin marketplace add ghiblin/sdd-flow` then `/plugin install sdd-flow@sdd-flow-marketplace`.) Add `--scope local` to keep the install personal to you in that repo, or `--scope project` to share it via the repo's committed `.claude/settings.json`; omitting `--scope` installs for every project. This is a private repo, so `gh auth login && gh auth setup-git` must already be done once on the machine.
+
+Then run its `sdd-flow-init` skill once to create the GitHub labels (`sdd:*`) and record the project's source directories. Launch the orchestrator as the main session:
 
 ```
 claude --agent sdd-flow "<a one- or two-sentence intent>"
