@@ -50,7 +50,7 @@ class FakeGh:
 
 
 class Repo(unittest.TestCase):
-    """A repo on `feature` with a red-green pair for #7."""
+    """A repo on `feature` with a red-green pair for #7 and a gate marker on its tree."""
 
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
@@ -66,6 +66,7 @@ class Repo(unittest.TestCase):
         git(self.repo, "checkout", "-q", "-b", "feature")
         self.commit("test: red scenario (#7)")
         self.commit("feat: make it pass (#7)")
+        self.mark()
         self.gh = FakeGh()
         close_sub_issue.run_gh = self.gh
         close_sub_issue.sub_issues = lambda parent: (
@@ -78,13 +79,21 @@ class Repo(unittest.TestCase):
         git(self.repo, "add", "-A")
         git(self.repo, "commit", "-q", "-m", subject)
 
+    def mark(self):
+        tree = git(self.repo, "rev-parse", "HEAD^{tree}")
+        rel = git(self.repo, "rev-parse", "--git-path", f"sdd-gate/{tree}")
+        path = pathlib.Path(rel)
+        path = path if path.is_absolute() else self.repo / path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("ok\n")
+
     def close(self, main=5, child=7):
         return close_sub_issue.close(main, child, repo=self.repo, base="main")
 
 
 class Close(Repo):
-    def test_given_a_clean_tree_and_pair_then_the_sub_issue_is_closed(self):
-        # Given a clean tree with a test: → feat: pair
+    def test_given_marker_and_pair_then_the_sub_issue_is_closed(self):
+        # Given a clean tree with a gate marker and a test: → feat: pair
         # When the sub-issue is closed
         ok, message = self.close()
         # Then it is closed as completed and the re-read shows CLOSED
@@ -115,16 +124,25 @@ class Close(Repo):
         self.assertFalse(self.gh.closed())
 
     def test_given_a_dirty_tree_then_it_refuses(self):
-        # Given an untracked file
+        # Given an untracked file next to the marked tree
         (self.repo / "stray.txt").write_text("x\n")
         ok, message = self.close()
         self.assertFalse(ok)
         self.assertIn("not clean", message)
         self.assertFalse(self.gh.closed())
 
+    def test_given_no_marker_on_head_tree_then_it_refuses(self):
+        # Given a new commit after the gate ran, so the marker is on an old tree
+        self.commit("chore: later change (#7)")
+        ok, message = self.close()
+        self.assertFalse(ok)
+        self.assertIn("gate marker", message)
+        self.assertFalse(self.gh.closed())
+
     def test_given_no_red_green_pair_then_it_refuses(self):
         # Given a sub-issue whose only commit is feat:
         self.commit("feat: no red first (#8)")
+        self.mark()
         close_sub_issue.sub_issues = lambda parent: [{"number": 8, "state": "OPEN", "title": "T"}]
         ok, message = self.close(child=8)
         self.assertFalse(ok)
@@ -134,6 +152,7 @@ class Close(Repo):
     def test_given_no_red_green_label_then_the_pair_check_is_skipped(self):
         # Given an exempt sub-issue with only a docs: commit
         self.commit("docs: declare the hook (#8)")
+        self.mark()
         self.gh.labels = ["sdd:task", "sdd:no-red-green"]
         close_sub_issue.sub_issues = lambda parent: [{"number": 8, "state": "OPEN", "title": "T"}]
         ok, message = self.close(child=8)

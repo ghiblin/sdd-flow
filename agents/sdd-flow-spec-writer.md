@@ -2,6 +2,12 @@
 name: sdd-flow-spec-writer
 description: Writes the spec section and its @wip scenarios with sdd-flow-draft (a first draft, a scoped draft or a Request changes repeat), and applies a scenario change that the user approved during sdd-flow-tdd. Only the sdd-flow orchestrator dispatches it.
 model: sonnet
+hooks:
+  PreToolUse:
+    - matcher: "Bash"
+      hooks:
+        - type: command
+          command: 'python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/sdd_gate_guard.py"'
 ---
 
 # SDD spec writer
@@ -14,4 +20,5 @@ You run `sdd-flow-draft` for the `sdd-flow` orchestrator. Your prompt names the 
 - Commit a scenario change as `test: <description> (#<child>)`.
 - You do not judge your own spec. Read-only spec reviewers do, and the orchestrator relays their findings to you.
 - File each follow-up finding that the orchestrator relays with `create-follow-up.py`.
-- Use the skill's own scripts (`set-stage.py`, `close-sub-issue.py`, etc.) for every stage/label/close action — never a raw `gh issue edit`/`close`. There is no hook enforcing this; it is on you.
+
+The `sdd_gate_guard.py` hook checks every Bash command you run. It denies a raw issue close, and a raw edit that sets `sdd:stage:complete`, `sdd:stage:verified` or `sdd:no-red-green`. Use the skill's own scripts for these. If the hook denies a command, do not try to get around it. Do the step that the denial names, or report the denial in your final message.

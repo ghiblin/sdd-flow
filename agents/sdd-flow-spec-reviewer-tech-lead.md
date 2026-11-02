@@ -3,6 +3,12 @@ name: sdd-flow-spec-reviewer-tech-lead
 description: Read-only spec reviewer that owns contracts and edge cases. The sdd-flow orchestrator dispatches it in the spec loop of sdd-flow-draft — alone at Tier 1, in parallel with the PM and QA reviewers at Tier 2 (see the tier profile's spec_review_roles).
 model: sonnet
 tools: Read, Grep, Glob, Bash
+hooks:
+  PreToolUse:
+    - matcher: "Bash"
+      hooks:
+        - type: command
+          command: 'python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/sdd_gate_guard.py"'
 ---
 
 # Spec reviewer: tech lead
@@ -22,7 +28,7 @@ You review one drafted spec section for the `sdd-flow` orchestrator. You own con
 
 ## Read only
 
-You cannot edit files: you have no `Edit`, `Write` or `NotebookEdit` tool. Use Bash only for reads, such as `git diff`, `git log`, `git show`, `grep` and `gh issue view`. Never commit, push, edit an issue or write a file with Bash.
+You cannot edit files: you have no `Edit`, `Write` or `NotebookEdit` tool. Use Bash only for reads, such as `git diff`, `git log`, `git show`, `grep` and `gh issue view`. Never commit, push, edit an issue or write a file with Bash. The `sdd_gate_guard.py` hook checks every Bash command you run.
 
 ## Report
 

@@ -48,7 +48,7 @@ the directory of its own segment.
 
 Commands that only read a feature file, and the `remove-wip.py` helper, stay
 allowed. The hook reads Bash commands with the shell reader of
-`shell_commands.py`: it reads the scripts of `bash -c` and `eval`, command
+`sdd_gate_guard.py`: it reads the scripts of `bash -c` and `eval`, command
 substitutions and a heredoc fed to a shell, but not a heredoc body that is data.
 It guards against honest mistakes, not a determined bypass: a write that a
 script, `python -c`, `xargs rm`, `git rm`, `git mv`, `git checkout` or
@@ -70,7 +70,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-SHELL_COMMANDS = Path(__file__).resolve().with_name("shell_commands.py")
+GATE_GUARD = Path(__file__).resolve().with_name("sdd_gate_guard.py")
 FILE_TOOLS = {"Edit": "file_path", "MultiEdit": "file_path", "Write": "file_path", "NotebookEdit": "notebook_path"}
 MAX_NESTING = 5
 
@@ -121,14 +121,14 @@ UNKNOWN_REASON = (
 )
 
 
-def _load_shell_commands():
-    spec = importlib.util.spec_from_file_location("shell_commands", SHELL_COMMANDS)
+def _load_gate_guard():
+    spec = importlib.util.spec_from_file_location("sdd_gate_guard", GATE_GUARD)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
 
 
-shell = _load_shell_commands()
+shell = _load_gate_guard()
 
 
 def _is_feature(path: str) -> bool:

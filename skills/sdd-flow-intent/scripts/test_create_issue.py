@@ -184,6 +184,26 @@ class CreateIssue(unittest.TestCase):
         with self.assertRaises(SystemExit):
             create_issue.create_issue("Not A Slug", "i", ["a.md"], [])
 
+    def test_a_given_tier_adds_the_sdd_tier_label(self):
+        gh = FakeGh()
+        create_issue.run_gh = gh
+        create_issue.create_issue("add-router", "Add a router", ["a.md"], [], tier=0)
+        self.assertIn("sdd:tier:0", gh.labels)
+        self.assertIn("sdd:feature", gh.labels)
+
+    def test_no_tier_given_adds_no_tier_label(self):
+        gh = FakeGh()
+        create_issue.run_gh = gh
+        create_issue.create_issue("add-router", "Add a router", ["a.md"], [])
+        self.assertFalse(any(l.startswith("sdd:tier:") for l in gh.labels))
+
+    def test_an_invalid_tier_is_refused_before_any_gh_call(self):
+        gh = FakeGh()
+        create_issue.run_gh = gh
+        with self.assertRaises(SystemExit):
+            create_issue.create_issue("add-router", "Add a router", ["a.md"], [], tier=3)
+        self.assertEqual(gh.calls, [])
+
 
 class Cli(unittest.TestCase):
     def test_main_prints_the_issue_number(self):
