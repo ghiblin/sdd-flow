@@ -1,17 +1,19 @@
 #!/usr/bin/env python3
-"""Close an `sdd:task` sub-issue only when the gate passed on this tree and red came before green.
+"""Close an `sdd:task` sub-issue once its tree is clean and red came before green.
 
 Usage:
   close-sub-issue.py <main-issue-number> <child> [--base main] [--repo .]
 
 This is the only way to close a sub-issue. It refuses (exit 1, reason on stderr) unless:
 `<child>` is an open `sdd:task` sub-issue of `<main>`; the working tree is clean (no tracked
-change and no untracked, unignored file); a gate marker
-`$(git rev-parse --git-path sdd-gate/<tree>)` matches `HEAD^{tree}` (written by the project's
-gate script on a clean pass); and, unless the sub-issue carries `sdd:no-red-green`,
+change and no untracked, unignored file); and, unless the sub-issue carries `sdd:no-red-green`,
 `verify_red_green.py` finds a non-empty `test:` commit before a `feat:`/`fix:` commit for
 `(#<child>)` in `<base>...HEAD`. Then it runs `gh issue close <child> --reason completed` and
 re-reads the sub-issue, failing if its state is not CLOSED. Stdlib only; importable (`close`, `main`).
+
+This script does not itself check that the project's build gate passed — the calling skill
+instructs running it first, as a plain step. There is no gate-marker file and no hook enforcing
+it; a stale or skipped gate is caught by code review, not by a program refusing to proceed.
 """
 from __future__ import annotations
 
@@ -23,7 +25,6 @@ import sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-MARKER_DIR = "sdd-gate"
 EXEMPT = "sdd:no-red-green"
 
 
@@ -49,16 +50,6 @@ def _git(repo: Path, *args: str) -> str:
     ).stdout.strip()
 
 
-def marker_file(repo: Path, tree: str) -> Path:
-    """The gate marker path for `tree`, laid out as the project's gate script writes it.
-
-    Keep this in step with `marker_path` in the project's `scripts/gate_marker.py`;
-    `scripts/test_gate_marker.py` (`MarkerLayoutAgrees`) checks that both give the same path.
-    """
-    path = Path(_git(repo, "rev-parse", "--git-path", f"{MARKER_DIR}/{tree}"))
-    return path if path.is_absolute() else (Path(repo) / path).resolve()
-
-
 def _view(child: int) -> dict:
     return json.loads(run_gh(["issue", "view", str(child), "--json", "state,labels"]))
 
@@ -75,10 +66,7 @@ def close(parent: int, child: int, repo: Path | str = ".", base: str = "main") -
     if "sdd:task" not in labels:
         return False, f"#{child} has no sdd:task label"
     if _git(repo, "status", "--porcelain"):
-        return False, "the working tree is not clean; commit or remove every change, then run the gate"
-    tree = _git(repo, "rev-parse", "HEAD^{tree}")
-    if not marker_file(repo, tree).is_file():
-        return False, f"no gate marker matches HEAD^{{tree}} {tree}; run the build gate (scripts/check.sh)"
+        return False, "the working tree is not clean; commit or remove every change, then run the build gate"
     if EXEMPT not in labels:
         ok, message = _red_green.verify(child, repo=repo, base=base)
         if not ok:
@@ -87,7 +75,7 @@ def close(parent: int, child: int, repo: Path | str = ".", base: str = "main") -
     state = _view(child)["state"]
     if state != "CLOSED":
         return False, f"#{child} close did not land: state is {state}"
-    return True, f"#{child} closed (gate marker on {tree[:12]})"
+    return True, f"#{child} closed"
 
 
 def main(argv: list[str] | None = None) -> int:
