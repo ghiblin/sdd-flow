@@ -14,6 +14,14 @@ When the project has BDD feature files, the drafting session also writes the int
 
 Public interface signatures and test-file paths are not standing headings: signatures drift fast and are better read from the code, and test files are discoverable directly under the project's test directories. The spec section captures what stays stable — goal, architecture, and decisions.
 
+## Tier profile
+
+Before step 1, read the main issue's `sdd:tier:<n>` label and load its profile: `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sdd_flow_config.py" . get-tier-profile <n>`.
+
+- **Tier 0** (`gherkin_required: false`, `spec_review_roles: []`): this skill does almost nothing. Write one short paragraph into the issue body in place of a spec section — what the batch changes and why it's behavior-preserving — and go straight to `set-stage.py spec-approved`. No `docs/specs/` edit, no `@wip` scenarios, no `NEEDS_SPEC_REVIEW`. The orchestrator's Checkpoint A still runs (the user confirms the paragraph), but there is nothing else to review.
+- **Tier 1** (`gherkin_required: false`, `spec_review_roles: [tech-lead]`): write the section as below, but the spec itself can be as short as "what changed and the regression test that proves it" — a bugfix rarely needs the full Goal/Architecture/Decisions shape below if the fix is narrow. `@wip` scenarios are optional: a named test that can fail is enough if the project has no BDD feature files for this path. Spec review (below) runs with only the tech-lead role.
+- **Tier 2** (`gherkin_required: true`, `spec_review_roles: [pm, tech-lead, qa]`): today's full behavior, unchanged — the rest of this skill describes it.
+
 ## Section template
 
 Append (new module) or amend (existing module, same heading) this exact structure in the spec file named on the issue's `**Spec files:**` line (`docs/specs/<module-slug>.md`, or `docs/specs/<topic>/<module-slug>.md` if the project groups specs into topic folders — follow its documented folder rule):

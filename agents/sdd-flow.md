@@ -25,17 +25,17 @@ You drive **one** SDD feature (one main GitHub issue) through its stages. You ne
 
 ## Notify
 
-Whenever this file says **Notify `<message>`**, do both, once per event (never repeat for the same event):
+Whenever this file says **Notify `<message>`**: read `notifications.desktop` and `notifications.push` with `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/sdd_flow_config.py . get notifications.desktop` (and `.push`). Both default to `false` — this channel is an environment-specific convenience (it started as one user's macOS/VS Code setup, where Claude Code's own OSC notifications don't reach the desktop), not a core part of the workflow. Do each one that is `true`, once per event (never repeat for the same event):
 
-1. Desktop: run this command via Bash. Pass the message as an argument, never spliced into the AppleScript. That way, quotes and apostrophes in a question cannot break it:
+1. Desktop (only if `notifications.desktop: true`): run this command via Bash. Pass the message as an argument, never spliced into the AppleScript. That way, quotes and apostrophes in a question cannot break it:
 
    ```bash
-   osascript -e 'on run argv' -e 'display notification (item 1 of argv) with title "DietPal SDD" sound name "Glass"' -e 'end run' -- '<message, with each single quote written as '\'' >'
+   osascript -e 'on run argv' -e 'display notification (item 1 of argv) with title "sdd-flow"' -e 'end run' -- '<message, with each single quote written as '\'' >'
    ```
 
-2. Phone: call `PushNotification` with the same message. It reaches the phone only while Remote Control is connected. A "not sent" result from it is not a failure.
+2. Phone (only if `notifications.push: true`): call `PushNotification` with the same message. It reaches the phone only while Remote Control is connected. A "not sent" result from it is not a failure.
 
-Then continue to the terminal prompt — the notification never replaces `AskUserQuestion`.
+With both `false` (the default), skip straight to the terminal prompt. Either way, the notification never replaces `AskUserQuestion`.
 
 ## Subagent dispatch
 
@@ -157,6 +157,8 @@ Wait for each result. Never predict or summarise a subagent's result before it a
 | 3 | Implement | `sdd-flow-tdd`, one fresh subagent per open sub-issue. Stage note for the first: "Create the sub-issues if none exist, then work only on the first open one; stop after closing it. Do not run sdd-flow-reconcile, even past the session budget of step 10: the orchestrator runs it next." For later ones: "Work only on sub-issue #<child>; stop after closing it. Do not run sdd-flow-reconcile, even past the session budget of step 10: the orchestrator runs it next." | After each tdd subagent, one fresh `sdd-flow-reconcile` subagent with stage note "You are the orchestrator's checkpoint — do not tell the user to open a new session; report DONE." The first `sdd-flow-tdd` subagent moves the label from `sdd:stage:spec-approved` to `sdd:stage:implementing`. Repeat 3 while the label is `sdd:stage:implementing`. Go to 2 as a **Scoped draft** when it is `sdd:stage:drafting-spec`. Go to 4 when it is `sdd:stage:complete`. |
 | 4 | Validate | `sdd-flow-pr-validate`, after the **Open decisions sweep** and **Checkpoint B** | When `DONE` with label `sdd:stage:verified`: **Notify** `#<n>: verified — PR ready`, report the PR URL and that `${CLAUDE_PLUGIN_ROOT}/scripts/merge_pr.py` handles merge + teardown, then stop. |
 
+**Tier 0/1 shrink stages 2 and 3, they don't skip them.** The stage numbering, labels and state machine above are the same for every tier — what changes is how much each stage's own skill does, per its tier profile (`get-tier-profile`, read by `sdd-flow-draft`/`sdd-flow-tdd`/`sdd-flow-pr-validate` themselves): Tier 0's draft is a one-paragraph note with no spec-review loop and no Gherkin, and its implement stage is one batch commit with no red/green and no per-file sub-issues; Tier 1's draft gets one reviewer role instead of three. Checkpoint A still runs (the user still approves what was drafted, however short); it just has far less to approve. Do not special-case the stage table itself — special-case only what each skill does inside its stage, driven by the tier profile.
+
 ### Scoped draft
 
 A scoped draft writes the spec text for work that a reconcile pass added. Use it when the label is `sdd:stage:drafting-spec` and an open sub-issue carries `sdd:needs-spec`.
@@ -193,22 +195,23 @@ A scoped draft writes the spec text for work that a reconcile pass added. Use it
 The spec writer asks for this review after it commits the draft, and before it asks for the approval. Each draft has one loop of at most two review rounds. A "Request changes" repeat at Checkpoint A and a scoped draft each start a new loop with its own two rounds. Round 2 re-checks the prior findings and reviews the new commits. A block with a round other than 1 or 2 is a **Failure**: start no review.
 
 1. Rewrite the diff range of the block against the feature branch: `<base-sha>..HEAD` → `<base-sha>..sdd/<n>-<slug>`. Your cwd is the main checkout, where `HEAD` is `main`.
-2. Launch the three spec reviewers in one message, in parallel, with the Agent tool: `subagent_type: "sdd-flow-spec-reviewer-pm"`, `subagent_type: "sdd-flow-spec-reviewer-tech-lead"` and `subagent_type: "sdd-flow-spec-reviewer-qa"`. Give each one this prompt:
+2. **Tier-scoped reviewer roles.** Read the issue's `sdd:tier:<n>` label and load `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/sdd_flow_config.py . get-tier-profile <n>`. Its `spec_review_roles` names which of the three roles run this round — map each to its subagent type: `pm` → `sdd-flow-spec-reviewer-pm`, `tech-lead` → `sdd-flow-spec-reviewer-tech-lead`, `qa` → `sdd-flow-spec-reviewer-qa`. An empty list (Tier 0 shouldn't reach this block at all, since it skips drafting a spec — treat it as a **Failure** if it does) means skip straight to step 4 with `SPEC REVIEW RESULTS: NONE`. Tier 2's default is all three, in parallel, as before; Tier 1's default is `tech-lead` alone.
+3. Launch every role from step 2 in one message, in parallel, with the Agent tool. Give each one this prompt:
    1. "You are reviewing the drafted spec of issue #<n>. You did not write this spec. Report findings only; do not edit files."
-   2. Inputs: the worktree path, the rewritten diff range, the spec sections, `constitution.md` and each `<crate>/RULES.md` that the sections touch. On round 2, also the prior findings to re-check and the follow-up findings already filed.
-3. Wait for all three. Merge their blocking findings into one list, labelled by reviewer (`pm:`, `tech-lead:`, `qa:`).
-4. Send the writer `SPEC REVIEW RESULTS:` followed by that list, then every follow-up finding, also labelled by reviewer. If no reviewer has a finding, send `SPEC REVIEW RESULTS: NONE`.
+   2. Inputs: the worktree path, the rewritten diff range, the spec sections, `constitution.md` and each touched module's rules file (per the project's `rules_file_glob` config, e.g. `<module>/RULES.md`). On round 2, also the prior findings to re-check and the follow-up findings already filed.
+4. Wait for every role you launched. Merge their blocking findings into one list, labelled by reviewer (`pm:`, `tech-lead:`, `qa:`).
+5. Send the writer `SPEC REVIEW RESULTS:` followed by that list, then every follow-up finding, also labelled by reviewer. If no reviewer has a finding, send `SPEC REVIEW RESULTS: NONE`.
 
 If the Agent tool is unavailable, that is a **Failure**. Never review it yourself.
 
 ## Code review (`NEEDS_CODE_REVIEW`)
 
-The implementer asks for this review after the build gate of `sdd-flow-tdd` step 8, and before it closes the sub-issue. Each sub-issue has one loop of at most two review rounds. Round 2 re-checks the prior findings and reviews the new commits. A block with a round other than 1 or 2 is a **Failure**: start no review.
+The implementer asks for this review after the build gate of `sdd-flow-tdd` step 8, and before it closes the sub-issue. Each sub-issue has one loop of at most the issue's tier's `code_review_rounds` (from `get-tier-profile`; Tier 2 defaults to 2, Tier 0/1 default to 1). Round 2 (when the profile allows it) re-checks the prior findings and reviews the new commits. A block with a round beyond the profile's cap is a **Failure**: start no review.
 
 1. Rewrite the commit range of the block against the feature branch: `<sha>^..HEAD` → `<sha>^..sdd/<n>-<slug>`.
 2. Dispatch one reviewer with the Agent tool, `subagent_type: "sdd-flow-code-reviewer"`, and this prompt:
    1. "You are reviewing the commits of sub-issue #<child> of issue #<n>. You did not write this code. Report findings only; do not edit files."
-   2. Inputs: the worktree path, the rewritten commit range, the spec sections, each `RULES.md` that the block names and `constitution.md`. On round 2, also the prior findings to re-check and the follow-up findings already filed.
+   2. Inputs: the worktree path, the rewritten commit range, the spec sections, each touched module's rules file (per `rules_file_glob`) that the block names and `constitution.md`. On round 2, also the prior findings to re-check and the follow-up findings already filed.
 3. Wait for it. Send the same implementer `CODE REVIEW RESULTS:` followed by its output verbatim.
 
 If the Agent tool is unavailable, that is a **Failure**. Never review it yourself.
@@ -227,13 +230,15 @@ The implementer never edits a feature file. So after the user approves a new or 
 
 Your cwd is the main checkout, where `HEAD` is `main` — so never pass the block's range as-is. Rewrite it against the feature branch first: `main...HEAD` → `main...sdd/<n>-<slug>`, `<base-sha>..HEAD` → `<base-sha>..sdd/<n>-<slug>`, and give both reviewers the worktree path.
 
-Every review writes its findings to a file in `$(git rev-parse --git-path sdd-reviews)` of the worktree, named `<n>-r<round>-<code-review|spec-conformance>.txt` (`<n>` is the main issue number; round 1 for the first reviews, 2 for the re-review, and so on). Each review returns one line, `<N> findings -> <path>`, or `NONE`. Launch the reviews **in one message, in parallel** (on a re-review, only the review(s) the block lists findings for):
+**Tier-scoped fan-out.** Read the issue's `sdd:tier:<n>` label and its `get-tier-profile`. At Tier 2 (`code_review_rounds: 2`, the full profile) run both reviews below. At Tier 0/1 (`code_review_rounds: 1`) run **only** review 1 (Code review); skip review 2 (Spec conformance) entirely — a gherkin-free, single- or zero-reviewer-role tier has no multi-role spec for a second reviewer to check conformance against, and running it anyway would be exactly the "feature-grade ceremony on a small change" this plugin exists to avoid.
+
+Every review writes its findings to a file in `$(git rev-parse --git-path sdd-reviews)` of the worktree, named `<n>-r<round>-<code-review|spec-conformance>.txt` (`<n>` is the main issue number; round 1 for the first reviews, 2 for the re-review, and so on). Each review returns one line, `<N> findings -> <path>`, or `NONE`. Launch the review(s) your tier calls for **in one message, in parallel** (on a re-review, only the review(s) the block lists findings for):
 
 1. **Code review** — invoke the `code-review` skill yourself, because a subagent cannot start the agents that the skill uses. Target branch `sdd/<n>-<slug>` (or the open PR number), at the block's effort. On a re-review (`round:` 2 or later), pass the rewritten range and the worktree path in the skill args. Then dispatch a fresh `sdd-flow-stage` subagent with the code-review output and the findings path. It writes the file and returns the one line. Read it once, and do not repeat the review text in your own output.
-2. **Spec conformance** — Agent tool, `subagent_type: "sdd-flow-code-reviewer"`, prompt in this order:
+2. **Spec conformance** (Tier 2 only) — Agent tool, `subagent_type: "sdd-flow-code-reviewer"`, prompt in this order:
    1. "You are reviewing branch `sdd/<n>-<slug>` for conformance. You did not write this code. Report findings only; do not edit files, except the one findings file below."
-   2. Inputs: the branch name, the worktree path, the rewritten diff range and the spec section(s). Also each `RULES.md` and `constitution.md`, and the findings path. It creates the directory with `mkdir -p`, writes the file and returns the one line. On a re-review, also give the prior findings to confirm fixed. The brief reads: `confirm these N findings are fixed; report only defects that lines in this diff introduce`.
-   3. Checks: every behaviour in the touched spec section has an implementation **and** an executable `cucumber` scenario under the crate's `tests/`. No behaviour is implemented that the spec does not describe. No `RULES.md` blocklist item is used. No constitution non-negotiable is violated.
+   2. Inputs: the branch name, the worktree path, the rewritten diff range and the spec section(s). Also each touched module's rules file (per `rules_file_glob`) and `constitution.md`, and the findings path. It creates the directory with `mkdir -p`, writes the file and returns the one line. On a re-review, also give the prior findings to confirm fixed. The brief reads: `confirm these N findings are fixed; report only defects that lines in this diff introduce`.
+   3. Checks: every behaviour in the touched spec section has an implementation **and** an executable BDD scenario under the module's own tests. No behaviour is implemented that the spec does not describe. No rules-file blocklist item is used. No constitution non-negotiable is violated.
    4. Red check: read each `test:` red commit of each sub-issue (its subject ends with `(#<child>)`). Report a weak or fake red as a non-blocking finding. A weak or fake red is a test that cannot fail, or a test that fails for an unrelated reason.
    5. Output: the findings, with `file:line`, the rule or spec clause broken and a concrete failure scenario, go to the file. The reply is the one line.
 
