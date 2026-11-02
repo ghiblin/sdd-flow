@@ -1,0 +1,11 @@
+{
+  "name": "sdd-flow",
+  "version": "0.1.0",
+  "description": "A tiered, configurable spec-driven-development workflow: mechanical changes, bugfixes, and features each pay only the review ceremony they actually need.",
+  "author": {
+    "name": "Alessandro Vitali"
+  },
+  "repository": "https://github.com/ghiblin/sdd-flow",
+  "license": "MIT",
+  "keywords": ["sdd", "spec-driven-development", "workflow", "tdd", "code-review", "github-issues"]
+}
