@@ -155,7 +155,7 @@ Wait for each result. Never predict or summarise a subagent's result before it a
 | 1 | Intent | `sdd-flow-intent`, stage note: "If step 4 finds independent pieces, do not create worktrees or dispatch anything: return NEEDS_INPUT proposing the split. If the user accepts, run step 5 once per piece and report DONE with `issues: #a, #b, …` instead of a single issue." | Capture `<n>`, slug, worktree and branch from the `DONE` block; go to 2. If the intent was split, see **Split**. |
 | 2 | Draft | `sdd-flow-draft` | The subagent ends with a `NEEDS_INPUT` for the approval. Go to **Checkpoint A**. After the approval, the label is `sdd:stage:spec-approved`. Then 3. |
 | 3 | Implement | `sdd-flow-tdd`, one fresh subagent per open sub-issue. Stage note for the first: "Create the sub-issues if none exist, then work only on the first open one; stop after closing it. Do not run sdd-flow-reconcile, even past the session budget of step 10: the orchestrator runs it next." For later ones: "Work only on sub-issue #<child>; stop after closing it. Do not run sdd-flow-reconcile, even past the session budget of step 10: the orchestrator runs it next." | After each tdd subagent, one fresh `sdd-flow-reconcile` subagent with stage note "You are the orchestrator's checkpoint — do not tell the user to open a new session; report DONE." The first `sdd-flow-tdd` subagent moves the label from `sdd:stage:spec-approved` to `sdd:stage:implementing`. Repeat 3 while the label is `sdd:stage:implementing`. Go to 2 as a **Scoped draft** when it is `sdd:stage:drafting-spec`. Go to 4 when it is `sdd:stage:complete`. |
-| 4 | Validate | `sdd-flow-pr-validate`, after the **Open decisions sweep** and **Checkpoint B** | When `DONE` with label `sdd:stage:verified`: **Notify** `#<n>: verified — PR ready`, report the PR URL and that `scripts/merge_pr.py` handles merge + teardown, then stop. |
+| 4 | Validate | `sdd-flow-pr-validate`, after the **Open decisions sweep** and **Checkpoint B** | When `DONE` with label `sdd:stage:verified`: **Notify** `#<n>: verified — PR ready`, report the PR URL and that `${CLAUDE_PLUGIN_ROOT}/scripts/merge_pr.py` handles merge + teardown, then stop. |
 
 ### Scoped draft
 
@@ -185,7 +185,7 @@ A scoped draft writes the spec text for work that a reconcile pass added. Use it
      2. Call `AskUserQuestion` with the line as the question and header `Decision`. Take its options from the line if the line lists any. Else, offer `Decide now` and `Leave open`. `Decide now` collects free text per **Collecting free text**.
   3. After the last line, dispatch one fresh `sdd-flow-reconcile` subagent with this stage note: "Apply these user answers to `## Open decisions`. Check off each one with its answer. If an answer changes the spec, act on it. If an answer adds behaviour that the spec section does not describe, follow the return to drafting in your skill. Then report DONE: <question → verbatim answer, one per line>."
   4. Report each `Leave open` answer to the user.
-  5. Run `python3 scripts/sdd_route.py <n> --after-sweep` and act on its line (see the table under **Resume**). If the line is `checkpoint-b` and a `Leave open` answer remains, print the resume command in place of Checkpoint B. Then stop.
+  5. Run `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/sdd_route.py <n> --after-sweep` and act on its line (see the table under **Resume**). If the line is `checkpoint-b` and a `Leave open` answer remains, print the resume command in place of Checkpoint B. Then stop.
 - **B — before pr-validate:** **Notify** `#<n>: implementation complete — ready to validate and open the PR`; `AskUserQuestion` "Run sdd-flow-pr-validate now (build gate, reviews, push, PR)?" — `Yes` / `Not now`. A session has dispatched a stage when the orchestrator has dispatched any stage subagent since it started. The Open decisions sweep counts. In such a session offer `Not now` first, as the recommended option, so that pr-validate starts in a fresh session. In a session that has dispatched no stage (a resume at stage `complete`), offer `Yes` first, so a resume does not loop. On `Not now`: print `claude --agent sdd-flow "#<n>"` as the resume command. Then stop.
 
 ## Spec review (`NEEDS_SPEC_REVIEW`)
@@ -244,7 +244,7 @@ Wait for **every** review that you launched. You relay only those lines and the 
 Run the check script, with read-only commands only:
 
 ```bash
-python3 scripts/sdd_check_state.py --issue <n> --stage <intent|draft|tdd|reconcile|pr-validate> [--worktree <worktree>] [--child <c>] [--stopped] --main-checkout <main checkout> --status-file <recorded status file> --main-sha <recorded main SHA>
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/sdd_check_state.py --issue <n> --stage <intent|draft|tdd|reconcile|pr-validate> [--worktree <worktree>] [--child <c>] [--stopped] --main-checkout <main checkout> --status-file <recorded status file> --main-sha <recorded main SHA>
 ```
 
 It checks that the issue is open, the `sdd:stage:*` label against what the stage may leave and the body's `**Stage:**` line against the label, the branch of the worktree, the untouched main checkout (status and `main` SHA recorded at launch) and, with `--child`, that the sub-issue of an `sdd-flow-tdd` subagent is `CLOSED`. Pass `--worktree` once the worktree exists, `--child` after an `sdd-flow-tdd` subagent, and `--stopped` only for an `sdd-flow-pr-validate` `DONE` that carries the line `outcome: stopped by the user`. State verification accepts `complete` after `sdd-flow-pr-validate` only with that line. After such a `DONE` the orchestrator does not offer a retry: it prints `claude --agent sdd-flow "#<n>"` as the resume command and stops. A `DONE` with the sub-issue still open is a **Failure**. Never dispatch another tdd subagent on the same sub-issue unless the user chooses `Retry`.
@@ -264,7 +264,7 @@ If `sdd-flow-intent` returns a `NEEDS_INPUT` proposing to split the intent into 
 
 ## Resume (`#<n>`)
 
-Run `python3 scripts/sdd_route.py <n>` on every resume and again after every reconcile. Act on its one line. Exit 2 is a **Failure**. Pass `--after-sweep` after the **Open decisions sweep** and after the reconcile of a stage 3 sub-issue: the sweep runs only on a resume and before Checkpoint B, so a `Leave open` answer is not asked again after each sub-issue. When the run after the reconcile of a sub-issue prints `checkpoint-b`, run the script once more without `--after-sweep`, so the sweep runs before Checkpoint B.
+Run `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/sdd_route.py <n>` on every resume and again after every reconcile. Act on its one line. Exit 2 is a **Failure**. Pass `--after-sweep` after the **Open decisions sweep** and after the reconcile of a stage 3 sub-issue: the sweep runs only on a resume and before Checkpoint B, so a `Leave open` answer is not asked again after each sub-issue. When the run after the reconcile of a sub-issue prints `checkpoint-b`, run the script once more without `--after-sweep`, so the sweep runs before Checkpoint B.
 
 | Route | Action |
 |---|---|
