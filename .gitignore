@@ -1,0 +1,4 @@
+.claude/*.local.md
+.claude/*.local.json
+__pycache__/
+*.pyc
