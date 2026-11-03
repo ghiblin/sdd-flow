@@ -53,6 +53,7 @@ DEFAULT_PROFILES: dict[int, dict[str, Any]] = {
         "gherkin_required": False,
         "batch_mode": True,
         "refactor_step": False,
+        "adr_check": False,
     },
     1: {
         "spec_review_roles": ["tech-lead"],
@@ -60,6 +61,7 @@ DEFAULT_PROFILES: dict[int, dict[str, Any]] = {
         "gherkin_required": False,
         "batch_mode": False,
         "refactor_step": True,
+        "adr_check": False,
     },
     2: {
         "spec_review_roles": ["pm", "tech-lead", "qa"],
@@ -67,6 +69,7 @@ DEFAULT_PROFILES: dict[int, dict[str, Any]] = {
         "gherkin_required": True,
         "batch_mode": False,
         "refactor_step": True,
+        "adr_check": True,
     },
 }
 

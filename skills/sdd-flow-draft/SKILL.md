@@ -5,7 +5,7 @@ description: Use when the sdd-flow-intent step has resolved a target spec file a
 
 # Spec-Anchored Draft
 
-**Helper paths:** every script and template this skill uses is shared across the sdd-flow plugin, at `${CLAUDE_PLUGIN_ROOT}/scripts/…` and `${CLAUDE_PLUGIN_ROOT}/templates/…`. `${CLAUDE_PLUGIN_ROOT}` is the plugin's own install directory, set by the Claude Code plugin runtime; it resolves the same way regardless of where the plugin is installed.
+**Helper paths:** most scripts and templates this skill uses are shared across the sdd-flow plugin, at `${CLAUDE_PLUGIN_ROOT}/scripts/…` and `${CLAUDE_PLUGIN_ROOT}/templates/…`. `${CLAUDE_PLUGIN_ROOT}` is the plugin's own install directory, set by the Claude Code plugin runtime; it resolves the same way regardless of where the plugin is installed. The ADR check (see below) uses two that are local to this skill instead — `${CLAUDE_PLUGIN_ROOT}/skills/sdd-flow-draft/scripts/create-adr.py` and `${CLAUDE_PLUGIN_ROOT}/skills/sdd-flow-draft/templates/adr.md` — because no other skill needs them.
 
 ## Overview
 Amends a living per-module spec file in place for the current intent — a short, current section, not a growing history of every feature that ever touched the module.
@@ -20,7 +20,7 @@ Before step 1, read the main issue's `sdd:tier:<n>` label and load its profile: 
 
 - **Tier 0** (`gherkin_required: false`, `spec_review_roles: []`): this skill does almost nothing. Write one short paragraph into the issue body in place of a spec section — what the batch changes and why it's behavior-preserving — and go straight to `set-stage.py spec-approved`. No `docs/specs/` edit, no `@wip` scenarios, no `NEEDS_SPEC_REVIEW`. The orchestrator's Checkpoint A still runs (the user confirms the paragraph), but there is nothing else to review.
 - **Tier 1** (`gherkin_required: false`, `spec_review_roles: [tech-lead]`): write the section as below, but the spec itself can be as short as "what changed and the regression test that proves it" — a bugfix rarely needs the full Goal/Architecture/Decisions shape below if the fix is narrow. `@wip` scenarios are optional: a named test that can fail is enough if the project has no BDD feature files for this path. Spec review (below) runs with only the tech-lead role.
-- **Tier 2** (`gherkin_required: true`, `spec_review_roles: [pm, tech-lead, qa]`): today's full behavior, unchanged — the rest of this skill describes it.
+- **Tier 2** (`gherkin_required: true`, `spec_review_roles: [pm, tech-lead, qa]`, `adr_check: true`): today's full behavior, unchanged — the rest of this skill describes it. Its `adr_check` flag also turns on **ADR check** below; Tier 0 and Tier 1 default `adr_check` to `false` and skip it.
 
 ## Section template
 
@@ -60,7 +60,7 @@ Always write **Out of scope:** for a new or amended section. `none` is a valid v
 1. From the issue body block (between `<!-- sdd:begin -->` / `<!-- sdd:end -->`), read `**Intent:**`, `**Worktree:**`, `**Branch:**`, and `**Spec files:**`. `**Spec files:**` is comma-separated — repeat steps 3-4 below for **every** path in it, not just the first. If drafting needs a spec file that the line does not list, add it with `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/set-spec-files.py" "$n" --add --spec-file <path>`. Only that line changes. A non-zero exit means the read-back did not match.
 2. **Always draft in the feature's worktree — never on the main branch or the main checkout.** The issue body's `**Worktree:**` line is the repo-relative worktree path that `sdd-flow-intent` recorded. Its `**Branch:**` line is the exact branch name (`sdd/<n>-<slug>`) to use: do not invent one. **REQUIRED SUB-SKILL:** use `superpowers:using-git-worktrees` to ensure that worktree exists on the branch named in the issue body (`sdd/<n>-<slug>`). If it is absent, create it from the current main branch. Do the rest of this skill from inside it. If this session is already confined to that worktree, just confirm the path matches. Every `**Spec files:**` path below is relative to the worktree checkout, and every file edit in this skill happens there.
 3. For the current spec file: if the file doesn't exist yet, create it with the concept's heading. If the file exists and already has a heading for this concept, amend that heading in place. Do not append a second heading for the same concept. Do not keep old **Decisions** bullets that the new intent supersedes: edit them, don't just add more. If the file exists but has no heading for this concept yet, a different concept already lives there. Append a new heading for this concept to the existing file. This is not the frozen-per-feature-file pattern. It is a genuinely new concept that shares a module file, not a repeat of one already documented. The project's governance docs may cap a spec file's size. If so, check the file against that cap before writing. When the new or amended section would push it over, first split the file the way those docs prescribe. Add every new file to `**Spec files:**` with `set-spec-files.py --add`.
-4. Fill in **Goal** and **Architecture** now, before code exists — best-guess is fine, both get corrected at reconcile if reality diverges. Add **Decisions** bullets as they firm up. If no decision is firm yet, leave out the heading.
+4. Fill in **Goal** and **Architecture** now, before code exists — best-guess is fine, both get corrected at reconcile if reality diverges. Add **Decisions** bullets as they firm up. If no decision is firm yet, leave out the heading. When `adr_check` is on (Tier 2), check each new Decisions bullet against the ADR criteria before writing it — see **ADR check**.
 5. **Write the executable spec.** If the project has no BDD feature files, skip this step.
    - Write one scenario per behaviour that the section adds or changes, in the project's BDD feature files.
    - Tag each new scenario `@wip`, and each changed scenario that fails today. The project's build gate skips `@wip` scenarios. A changed scenario that still passes stays untagged, so the build gate keeps running it. Only `sdd-flow-tdd` removes the `@wip` tag.
@@ -167,6 +167,33 @@ A `sdd-flow-reconcile` pass can add work that the spec section does not describe
 - Both scripts refuse unless a checked `## Open decisions` line asks exactly that question for the sub-issue title. Its resolution must also start with `yes`, `approved` or `exempt`. A line that only mentions the title, a line with no resolution and a rejection are not approvals. A refusal means that the user did not approve the exemption. Report the refusal to the user.
 - If the user rejects the exemption, do not use the flag. `sdd-flow-tdd` then needs a failing test first.
 
+## ADR check
+
+Only when the tier profile's `adr_check` is `true` (Tier 2 by default). For each Decisions bullet step 4 produces, ask: does it pick between two or more viable approaches, is it expensive to reverse, or does it affect more than this module? A narrow implementation detail ("retry three times") is not ADR-worthy; "use a router instead of a DAG for dispatch" is. Check each bullet once, right after you draft it — do not batch every Decisions bullet from the whole section into one pass at the end.
+
+- For a flagged bullet, add an `## Open decisions` question before writing it into the spec:
+
+  ```bash
+  python3 "${CLAUDE_PLUGIN_ROOT}/scripts/add-open-decision.py" "$n" --question "Record '<decision text>' as an ADR?"
+  ```
+
+  One question per flagged decision — never one question covering several decisions at once.
+- Ask the user exactly that question. Do not write the Decisions bullet, and do not create the ADR, before the user answers. Under the `sdd` orchestrator, end your turn with a `NEEDS_INPUT` for it.
+- On yes, check the line off and create the ADR, in that order:
+
+  ```bash
+  python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-open-decision.py" "$n" --question "Record '<decision text>' as an ADR?" --resolved-as "yes (user, <date>)"
+  path=$(python3 "${CLAUDE_PLUGIN_ROOT}/skills/sdd-flow-draft/scripts/create-adr.py" \
+      --title "<short decision title>" --context "<why this came up>" \
+      --decision "<decision text>" --consequences "<what this rules in or out>")
+  ```
+
+  `create-adr.py` numbers the file from what is already in `docs/adr/`, writes `docs/adr/ADR-NNN-<slug>.md` from this skill's own `templates/adr.md`, and appends a row to `docs/adr/README.md`. It never shells out to any other command — ADR authorship stays inside this skill, so the open-decision approval and the resulting file are both part of the same main-issue trail. A non-zero exit means the ADR or its README row did not land. Stop. Do not retry blindly. Report the failure.
+- Write the Decisions bullet as normal, with a trailing reference to the path `create-adr.py` printed: `<decision text> (see docs/adr/ADR-NNN-<slug>.md)`.
+- Commit the new ADR file and README row together with the spec section commit in step 5.
+- On no, check the line off with `--resolved-as "no (user, <date>)"`, and write the Decisions bullet with no ADR reference.
+- Never run `create-adr.py` without an explicit yes on the matching open-decision line — same rule as **Red-green exemption**.
+
 ## Common Mistakes
 - Drafting on the main branch / main checkout instead of the feature's worktree. Step 2 is not optional, even for a single-file spec amendment.
 - Writing a new heading per feature instead of amending the existing one for that concept. This is exactly the frozen-per-feature-file pattern this workflow replaces. (A new heading for a genuinely new *concept* in an existing file is fine — see step 3's third case.)
@@ -176,3 +203,5 @@ A `sdd-flow-reconcile` pass can add work that the spec section does not describe
 - Only handling the first path in `**Spec files:**` when an intent spans more than one module.
 - Inventing a branch name instead of using the issue body's `**Branch:**` line. The number in `sdd/<n>-<slug>` is how every later skill finds this issue.
 - In scoped mode, creating new sub-issues or drafting behaviour that no `sdd:needs-spec` sub-issue names. Draft only the labelled sub-issues. Clear each label.
+- Shelling out to an external `/adr` command, or writing ADR content by hand, instead of this skill's own `create-adr.py` — ADR authorship must stay inside the workflow so the open-decision approval and the resulting file are both part of the same auditable issue trail.
+- Running `create-adr.py` before the user answers the matching open-decision question, or batching several flagged Decisions bullets into one question instead of asking once per decision.

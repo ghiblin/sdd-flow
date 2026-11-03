@@ -34,11 +34,14 @@ class NoConfigFile(unittest.TestCase):
         self.assertEqual(t0["spec_review_roles"], [])
         self.assertTrue(t0["batch_mode"])
         self.assertFalse(t0["refactor_step"])
+        self.assertFalse(t0["adr_check"])
         t1 = sdd_flow_config.tier_profile(cfg, 1)
         self.assertEqual(t1["spec_review_roles"], ["tech-lead"])
+        self.assertFalse(t1["adr_check"])
         t2 = sdd_flow_config.tier_profile(cfg, 2)
         self.assertEqual(t2["spec_review_roles"], ["pm", "tech-lead", "qa"])
         self.assertEqual(t2["code_review_rounds"], 2)
+        self.assertTrue(t2["adr_check"])
 
 
 class ConfigFile(unittest.TestCase):
