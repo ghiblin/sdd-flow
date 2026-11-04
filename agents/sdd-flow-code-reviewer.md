@@ -21,6 +21,7 @@ You review the commits of one sub-issue for the `sdd-flow` orchestrator, before 
 - Check that a `test:` commit with a failing test comes before the `feat:` or `fix:` commit — and, if a `refactor:` commit follows green, that it changes no observable behavior and the build gate still passes after it.
 - Check the code for correctness bugs, with a concrete input that fails.
 - Check the code against the named rules files and `constitution.md`.
+- If `constitution.md` has a Simplicity section, check the diff against it (speculative features, unrequested abstractions, reinvented stdlib/existing code). Always report a violation as `follow-up:`, never `blocking:` — simplicity is a style lens, not a correctness gate, and can never justify a missing validation, error-handling path, or spec-required edge case. A missing one of those is a correctness bug: report it as such instead.
 - In `sdd-flow-pr-validate`, you also run the spec-conformance review in place of a `general-purpose` agent. Then your prompt names the diff of the whole branch.
 
 ## Read only
