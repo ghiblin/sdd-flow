@@ -20,7 +20,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from sdd_script_tools import Parser, ToolError, run_checked  # noqa: E402
 
 STAGES = ("intent", "draft", "tdd", "reconcile", "pr-validate")
-REPO = Path(__file__).resolve().parent.parent
 NEEDS_SPEC = Path(__file__).resolve().parent / "needs-spec.py"  # sdd-flow ships one shared scripts/ dir
 # The `**Stage:**` line pattern of set-stage.py. A unit test pins it to that script's
 # STAGE_LINE_RE, so the checker does not run the writer script to read one constant.
@@ -28,7 +27,11 @@ STAGE_LINE_RE = re.compile(r"^\*\*Stage:\*\* .*$", re.MULTILINE)
 
 
 def run_gh(args: list[str]) -> str:
-    return run_checked(["gh", *args], REPO)
+    # No cwd override: gh must run in the caller's own working directory (the
+    # user's project), never in this script's own location — that's the
+    # plugin's install/cache directory once sdd-flow ships as a plugin, not a
+    # git repo at all.
+    return run_checked(["gh", *args])
 
 
 def run_git(directory: str, *args: str) -> str:
@@ -36,7 +39,7 @@ def run_git(directory: str, *args: str) -> str:
 
 
 def run_needs_spec(issue: str) -> list[str]:
-    out = run_checked([sys.executable, str(NEEDS_SPEC), issue], REPO)
+    out = run_checked([sys.executable, str(NEEDS_SPEC), issue])
     return [line for line in out.splitlines() if line.strip()]
 
 

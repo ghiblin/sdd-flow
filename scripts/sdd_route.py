@@ -17,7 +17,6 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from sdd_script_tools import Parser, ToolError, load_open_decisions, parse_json, run_checked  # noqa: E402
 
-REPO = Path(__file__).resolve().parent.parent
 SKILL_SCRIPTS = Path(__file__).resolve().parent  # sdd-flow ships one shared scripts/ dir
 NEEDS_SPEC = SKILL_SCRIPTS / "needs-spec.py"
 LIST_SUB_ISSUES = SKILL_SCRIPTS / "list-sub-issues.py"
@@ -27,7 +26,11 @@ KNOWN_STAGES = ("verified", "drafting-spec", "spec-approved", "implementing", "c
 
 
 def run_gh(args: list[str]) -> str:
-    return run_checked(["gh", *args], REPO)
+    # No cwd override: gh must run in the caller's own working directory (the
+    # user's project), never in this script's own location — that's the
+    # plugin's install/cache directory once sdd-flow ships as a plugin, not a
+    # git repo at all.
+    return run_checked(["gh", *args])
 
 
 def _numbers(out: str, what: str) -> list[int]:
@@ -38,12 +41,12 @@ def _numbers(out: str, what: str) -> list[int]:
 
 
 def run_open_sub_issues(issue: str) -> list[int]:
-    return _numbers(run_checked([sys.executable, str(LIST_SUB_ISSUES), issue, "--open"], REPO),
+    return _numbers(run_checked([sys.executable, str(LIST_SUB_ISSUES), issue, "--open"]),
                     "list-sub-issues")
 
 
 def run_needs_spec(issue: str) -> list[int]:
-    return _numbers(run_checked([sys.executable, str(NEEDS_SPEC), issue], REPO), "needs-spec")
+    return _numbers(run_checked([sys.executable, str(NEEDS_SPEC), issue]), "needs-spec")
 
 
 def _join(numbers: list[int]) -> str:

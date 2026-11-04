@@ -18,8 +18,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
-
 # Matches git@<any-host>:owner/repo(.git), ssh://git@<any-host>/owner/repo(.git),
 # and https://<any-host>/owner/repo(.git) — deliberately host-agnostic so a
 # personal SSH alias (e.g. "github.me") doesn't need to match a known gh host.
@@ -45,6 +43,21 @@ def issue_number_from_branch(branch: str) -> int:
             f"'sdd/<issue-number>-<slug>'). Check out the feature branch first."
         )
     return int(match["number"])
+
+
+def repo_root() -> Path:
+    """The main checkout's root (never the plugin's own install/cache location, and never a
+    worktree's own root), found via git-common-dir the same way sdd-flow-init does, so this
+    works whether invoked from the main checkout or from inside a feature worktree."""
+    result = subprocess.run(
+        ["git", "rev-parse", "--git-common-dir"], capture_output=True, text=True
+    )
+    if result.returncode != 0:
+        raise SystemExit(
+            f"Could not resolve the repo root (git rev-parse --git-common-dir failed): "
+            f"{result.stderr.strip()}"
+        )
+    return Path(result.stdout.strip()).resolve().parent
 
 
 def run(cmd: list[str], cwd: Path | None = None, dry_run: bool = False) -> str:
@@ -87,6 +100,7 @@ def main() -> None:
     )
     args = parser.parse_args()
 
+    REPO_ROOT = repo_root()
     worktree_path = REPO_ROOT / ".claude" / "worktrees" / args.worktree_name
     if not worktree_path.exists():
         raise SystemExit(f"Worktree not found: {worktree_path}")

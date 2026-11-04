@@ -1,6 +1,6 @@
 {
   "name": "sdd-flow",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "A tiered, configurable spec-driven-development workflow: mechanical changes, bugfixes, and features each pay only the review ceremony they actually need.",
   "author": {
     "name": "Alessandro Vitali"
