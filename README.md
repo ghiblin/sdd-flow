@@ -50,6 +50,13 @@ claude --agent sdd-flow "<a one- or two-sentence intent>"
 claude --agent sdd-flow "#<issue-number>"   # resume
 ```
 
+Or, from inside an existing session, invoke the `sdd-flow` skill instead of dropping to a terminal — it just dispatches the same orchestrator agent:
+
+```
+/sdd-flow <a one- or two-sentence intent>
+/sdd-flow #<issue-number>   # resume
+```
+
 ## Configuring
 
 See `docs/config-reference.md` for the full key reference, including which alternatives are tracked-but-not-built yet (and fail loudly with their tracking issue if you select them, rather than silently falling back).
@@ -59,7 +66,7 @@ See `docs/config-reference.md` for the full key reference, including which alter
 ```
 .claude-plugin/plugin.json   plugin manifest
 agents/                      the orchestrator + its subagents (sdd-flow-*)
-skills/                      the 6 pipeline skills (sdd-flow-init/intent/draft/tdd/reconcile/pr-validate)
+skills/                      sdd-flow (orchestrator wrapper) + the 6 pipeline skills (sdd-flow-init/intent/draft/tdd/reconcile/pr-validate)
 hooks/                       sdd_gate_guard.py (hard build-gate check) + sdd_feature_guard.py (implementer can't edit feature files)
 scripts/                     shared stdlib-Python helpers + their unittest suites
 templates/                   shared issue-body templates

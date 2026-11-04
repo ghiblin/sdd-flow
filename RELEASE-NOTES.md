@@ -1,5 +1,9 @@
 # Release notes
 
+## v0.1.2 (2026-11-04)
+
+- New `sdd-flow` skill: a thin wrapper that dispatches the orchestrator agent via the Agent tool, so it can be launched as `/sdd-flow "<intent>"` or `/sdd-flow "#<issue>"` from inside an existing session instead of requiring a separate `claude --agent sdd-flow` terminal launch.
+
 ## v0.1.1 (2026-11-04)
 
 - `sdd-flow-code-reviewer` now checks a project's optional `constitution.md` Simplicity section (speculative features, unrequested abstractions, reinvented stdlib/existing code), always as a `follow-up:` finding — never `blocking:` — so it can never justify dropping validation, error handling, or a spec-required edge case.
