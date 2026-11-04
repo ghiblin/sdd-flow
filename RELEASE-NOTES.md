@@ -1,5 +1,9 @@
 # Release notes
 
+## v0.1.1 (2026-11-04)
+
+- `sdd-flow-code-reviewer` now checks a project's optional `constitution.md` Simplicity section (speculative features, unrequested abstractions, reinvented stdlib/existing code), always as a `follow-up:` finding — never `blocking:` — so it can never justify dropping validation, error handling, or a spec-required edge case.
+
 ## v0.1.0 (2026-11-02)
 
 Initial release. Ported from a project-local SDD workflow (diet-pal's `sdd-*` skills), generalized into a standalone, installable Claude Code plugin, and redesigned around three weight-class tiers so a mechanical change no longer pays feature-grade review ceremony.
