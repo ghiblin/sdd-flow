@@ -26,6 +26,7 @@ class NoConfigFile(unittest.TestCase):
         self.assertFalse(cfg["notifications"]["push"])
         self.assertTrue(cfg["worktree"]["enabled"])
         self.assertEqual(cfg["rules_file_glob"], "*/RULES.md")
+        self.assertEqual(cfg["security_commands"], [])
 
     def test_default_tier_profiles_cover_all_three_tiers(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -94,6 +95,29 @@ class ConfigFile(unittest.TestCase):
             self.write(tmp, "---\nstate_backend: github-issues\n")
             with self.assertRaises(sdd_flow_config.ConfigError):
                 sdd_flow_config.load(tmp)
+
+    def test_security_commands_parses_a_list_of_name_run_maps_with_embedded_commas(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self.write(
+                tmp,
+                "---\nsecurity_commands: "
+                '[{name: "eslint", run: "eslint --ext .js,.ts ."}, '
+                '{name: "audit", run: "npm audit"}]\n'
+                "---\n",
+            )
+            cfg = sdd_flow_config.load(tmp)
+        self.assertEqual(
+            cfg["security_commands"],
+            [
+                {"name": "eslint", "run": "eslint --ext .js,.ts ."},
+                {"name": "audit", "run": "npm audit"},
+            ],
+        )
+
+    def test_security_commands_documented_in_config_reference(self):
+        doc = pathlib.Path(__file__).resolve().parents[1] / "docs" / "config-reference.md"
+        content = doc.read_text(encoding="utf-8")
+        self.assertRegex(content, r"\|\s*`security_commands`\s*\|\s*`\[\]`\s*\|")
 
 
 class Cli(unittest.TestCase):
