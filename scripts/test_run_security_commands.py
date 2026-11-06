@@ -76,6 +76,20 @@ class FailsWhenAnyCommandExitsNonzero(Repo):
         self.assertFalse(run_security_commands.marker_path(self.repo, tree).exists())
 
 
+class FailsWhenAnEntryHasNoRunCommand(Repo):
+    def test_fails_when_an_entry_has_no_run_command(self):
+        # Given a configured entry missing its `run` field (a plausible typo) — not a
+        # real scan, so it must never be treated as a silent pass
+        self.configure('security_commands: [{name: "eslint-security"}]')
+        tree = self.tree()
+        # When the security gate runs
+        ok, message = run_security_commands.run(self.repo)
+        # Then it fails, naming the entry, and writes no marker
+        self.assertFalse(ok)
+        self.assertIn("eslint-security", message)
+        self.assertFalse(run_security_commands.marker_path(self.repo, tree).exists())
+
+
 class WritesMarkerWhenAllCommandsPassAndTreeStillClean(Repo):
     def test_writes_marker_when_all_commands_pass_and_tree_still_clean(self):
         # Given every configured command exits zero and touches nothing
