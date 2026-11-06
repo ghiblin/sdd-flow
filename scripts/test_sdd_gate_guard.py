@@ -293,6 +293,76 @@ class SetStage(unittest.TestCase):
         self.assertIsNotNone(guard.decide(self.set_stage("complete", cwd=self._tmp.name)))
 
 
+SECURITY_RUNNER = pathlib.Path(__file__).with_name("run_security_commands.py")
+
+
+class SecurityMarker(SetStage):
+    """set-stage.py complete|verified additionally needs the security marker when
+    `security_commands` is configured, via the hook's narrow, dedicated read of that
+    one key (bypassing sdd_flow_config.load()'s _validate())."""
+
+    def configure(self, frontmatter_body):
+        path = self.repo / ".claude"
+        path.mkdir(parents=True, exist_ok=True)
+        (path / "sdd-flow.local.md").write_text(f"---\n{frontmatter_body}\n---\n", encoding="utf-8")
+        git(self.repo, "add", "-A")
+        git(self.repo, "commit", "-q", "-m", "configure")
+
+    def run_security(self):
+        subprocess.run(
+            [sys.executable, str(SECURITY_RUNNER), "--repo", str(self.repo)],
+            check=True,
+            capture_output=True,
+        )
+
+    def test_allows_complete_without_security_marker_when_unconfigured(self):
+        # Given no security_commands configured (the default: no config file at all)
+        self.mark()
+        # When set-stage.py complete runs
+        # Then it is allowed: unchanged from today's behavior
+        self.assertIsNone(guard.decide(self.set_stage("complete")))
+
+    def test_denies_complete_without_security_marker_when_configured(self):
+        # Given security_commands configured but never run, so no security marker exists
+        self.configure('security_commands: [{name: "ok", run: "true"}]')
+        self.mark()
+        # When set-stage.py complete runs
+        # Then it is denied: the security marker is required but missing
+        self.assertIsNotNone(guard.decide(self.set_stage("complete")))
+
+    def test_allows_complete_when_security_marker_matches_configured_commands(self):
+        # Given security_commands configured and already run on this clean tree
+        self.configure('security_commands: [{name: "ok", run: "true"}]')
+        self.mark()
+        self.run_security()
+        # When set-stage.py complete runs
+        # Then it is allowed: both markers match the clean tree
+        self.assertIsNone(guard.decide(self.set_stage("complete")))
+
+    def test_denies_complete_when_security_commands_read_fails(self):
+        # Given a config file whose frontmatter is never closed with a second `---`
+        # line, so the hook's narrow read of security_commands itself fails
+        path = self.repo / ".claude"
+        path.mkdir(parents=True, exist_ok=True)
+        (path / "sdd-flow.local.md").write_text("---\nsecurity_commands: []\n", encoding="utf-8")
+        git(self.repo, "add", "-A")
+        git(self.repo, "commit", "-q", "-m", "configure")
+        self.mark()
+        # When set-stage.py complete runs
+        # Then it is denied: fail-closed, the same as an unreadable build-gate marker
+        self.assertIsNotNone(guard.decide(self.set_stage("complete")))
+
+    def test_allows_complete_when_unrelated_config_key_is_malformed(self):
+        # Given an unrelated key with a value _validate() would reject (tiers.classification
+        # is not a recognized value), while security_commands itself reads cleanly (absent,
+        # so empty)
+        self.configure("tiers:\n  classification: bogus")
+        self.mark()
+        # When set-stage.py complete runs
+        # Then it is allowed: the narrow security_commands read never calls _validate()
+        self.assertIsNone(guard.decide(self.set_stage("complete")))
+
+
 class HookProtocol(unittest.TestCase):
     def test_given_raw_close_when_hook_runs_then_it_prints_a_deny_decision(self):
         code, out = run_hook(bash("gh issue close 1"))
