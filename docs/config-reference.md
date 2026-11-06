@@ -17,6 +17,7 @@ notifications:
 worktree:
   enabled: true
 rules_file_glob: "*/RULES.md"
+security_commands: []
 ---
 ```
 
@@ -35,6 +36,7 @@ rules_file_glob: "*/RULES.md"
 | `notifications.push` | `false` | Call `PushNotification` on every `Notify` event (reaches a phone only while Remote Control is connected). |
 | `worktree.enabled` | `true` | Whether each feature gets its own `.claude/worktrees/<slug>` worktree. There is no implemented alternative yet — see below. |
 | `rules_file_glob` | `*/RULES.md` | The glob the reviewer agents use to find per-module rules files (generalized from the single-project convention of one `RULES.md` per crate/module). |
+| `security_commands` | `[]` | A list of `{name, run}` shell commands (SAST, dependency audit, secret scan, ...) that `sdd-flow-tdd` and `sdd-flow-pr-validate` run on the clean tree alongside the project's own build-gate command, on every build gate invocation. A non-zero exit from any entry fails the gate the same way a failing build-gate command does; a project sets its own severity threshold via each command's own CLI flags (sdd-flow does not parse tool output). An empty list (the default) skips the step entirely — see `docs/specs/build-gate.md#security-scanning-step`. |
 
 You can override one tier field without repeating the whole profile — the override merges over that tier's default:
 
