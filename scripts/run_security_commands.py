@@ -97,8 +97,13 @@ def run(repo: Path | str = ".") -> tuple[bool, str]:
         return True, "no security_commands configured; nothing to run"
     tree = tree_if_clean(repo)
     for entry in commands:
-        name = entry.get("name") or entry.get("run", "<unnamed>")
+        name = entry.get("name") or entry.get("run") or "<unnamed>"
         cmd = entry.get("run", "")
+        if not cmd:
+            # An empty `run` (a missing/blank field, often a typo) is not a scan that
+            # ran and passed. `sh -c ""` itself exits 0, so left unchecked this would
+            # be indistinguishable from a real pass and still get the trust marker.
+            return False, f"security command {name!r} has no 'run' command configured"
         result = subprocess.run(cmd, shell=True, cwd=str(repo))
         if result.returncode != 0:
             return False, f"security command {name!r} exited {result.returncode}"
