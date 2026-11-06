@@ -1,5 +1,7 @@
 """Stdlib unit tests for run_security_commands. Run: python3 -m unittest scripts.test_run_security_commands -v"""
+import contextlib
 import importlib.util
+import io
 import pathlib
 import subprocess
 import tempfile
@@ -104,9 +106,11 @@ class WriteWhenTreeDirtyAtTheEndWritesNoMarker(Repo):
 
 class WriteWhenTreeChangedDuringTheGateWritesNoMarker(Repo):
     def test_write_when_tree_changed_during_the_gate_writes_no_marker(self):
-        # Given a command that exits zero but commits new content mid-run
+        # Given a command that exits zero but commits new content mid-run (an empty
+        # commit leaves HEAD^{tree} unchanged, so the content must actually change)
         self.configure(
-            'security_commands: [{name: "commits", run: "git commit --allow-empty -q -m second"}]'
+            'security_commands: [{name: "commits", run: '
+            '"echo changed > a.txt && git add -A && git commit -q -m second"}]'
         )
         tree_before = self.tree()
         # When the security gate runs
@@ -118,12 +122,16 @@ class WriteWhenTreeChangedDuringTheGateWritesNoMarker(Repo):
 
 
 class Cli(Repo):
+    def run_cli(self, *args):
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            return run_security_commands.main(["--repo", str(self.repo), *args])
+
     def test_main_exits_zero_when_no_commands_are_configured(self):
-        self.assertEqual(run_security_commands.main(["--repo", str(self.repo)]), 0)
+        self.assertEqual(self.run_cli(), 0)
 
     def test_main_exits_non_zero_when_a_command_fails(self):
         self.configure('security_commands: [{name: "bad", run: "exit 1"}]')
-        self.assertEqual(run_security_commands.main(["--repo", str(self.repo)]), 1)
+        self.assertEqual(self.run_cli(), 1)
 
 
 if __name__ == "__main__":
