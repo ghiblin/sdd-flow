@@ -1,4 +1,5 @@
 .claude/*.local.md
 .claude/*.local.json
+.claude/worktrees/
 __pycache__/
 *.pyc
