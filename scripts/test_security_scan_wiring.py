@@ -1,6 +1,6 @@
-"""`sdd-flow-tdd` step 8 and `sdd-flow-pr-validate` step 3 must each call
-`scripts/run_security_commands.py` on the clean tree, right after the project's own
-build-gate command passes, on every build gate invocation (see
+"""`sdd-flow-tdd` step 8, `sdd-flow-pr-validate` step 3 and `sdd-flow-reconcile` step 2
+must each call `scripts/run_security_commands.py` on the clean tree, right after the
+project's own build-gate command passes, on every build gate invocation (see
 docs/specs/build-gate.md#Security scanning step, Architecture).
 
 These tests read the two skills' own prose and fail until each numbered step's text
@@ -33,6 +33,10 @@ class TestSecurityScanWiring(unittest.TestCase):
 
     def test_pr_validate_step_3_runs_the_security_command_runner(self):
         line = _step_line(REPO_ROOT / "skills/sdd-flow-pr-validate/SKILL.md", 3)
+        self.assertIn(RUNNER, line)
+
+    def test_reconcile_step_2_runs_the_security_command_runner(self):
+        line = _step_line(REPO_ROOT / "skills/sdd-flow-reconcile/SKILL.md", 2)
         self.assertIn(RUNNER, line)
 
 
