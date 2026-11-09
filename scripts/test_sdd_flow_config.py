@@ -26,6 +26,7 @@ class NoConfigFile(unittest.TestCase):
         self.assertFalse(cfg["notifications"]["push"])
         self.assertTrue(cfg["worktree"]["enabled"])
         self.assertEqual(cfg["rules_file_glob"], "*/RULES.md")
+        self.assertEqual(cfg["security_commands"], [])
 
     def test_default_tier_profiles_cover_all_three_tiers(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -94,6 +95,65 @@ class ConfigFile(unittest.TestCase):
             self.write(tmp, "---\nstate_backend: github-issues\n")
             with self.assertRaises(sdd_flow_config.ConfigError):
                 sdd_flow_config.load(tmp)
+
+    def test_security_commands_parses_a_list_of_name_run_maps_with_embedded_commas(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self.write(
+                tmp,
+                "---\nsecurity_commands: "
+                '[{name: "eslint", run: "eslint --ext .js,.ts ."}, '
+                '{name: "audit", run: "npm audit"}]\n'
+                "---\n",
+            )
+            cfg = sdd_flow_config.load(tmp)
+        self.assertEqual(
+            cfg["security_commands"],
+            [
+                {"name": "eslint", "run": "eslint --ext .js,.ts ."},
+                {"name": "audit", "run": "npm audit"},
+            ],
+        )
+
+    def test_security_commands_documented_in_config_reference(self):
+        doc = pathlib.Path(__file__).resolve().parents[1] / "docs" / "config-reference.md"
+        content = doc.read_text(encoding="utf-8")
+        self.assertRegex(content, r"\|\s*`security_commands`\s*\|\s*`\[\]`\s*\|")
+
+
+class LoadSecurityCommands(unittest.TestCase):
+    """`load_security_commands()` is the narrow read `run_security_commands.py` and
+    `sdd_gate_guard.py` both use, so an unrelated malformed key never breaks either."""
+
+    def write(self, tmp, text):
+        (pathlib.Path(tmp) / ".claude").mkdir(parents=True, exist_ok=True)
+        (pathlib.Path(tmp) / ".claude" / "sdd-flow.local.md").write_text(text, encoding="utf-8")
+
+    def test_empty_list_when_no_config_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertEqual(sdd_flow_config.load_security_commands(tmp), [])
+
+    def test_parses_the_configured_commands(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self.write(tmp, '---\nsecurity_commands: [{name: "ok", run: "true"}]\n---\n')
+            self.assertEqual(
+                sdd_flow_config.load_security_commands(tmp), [{"name": "ok", "run": "true"}]
+            )
+
+    def test_never_validates_an_unrelated_malformed_key(self):
+        # Given tiers.classification set to a value load()'s _validate() would reject,
+        # while security_commands itself is absent (so empty)
+        with tempfile.TemporaryDirectory() as tmp:
+            self.write(tmp, "---\ntiers:\n  classification: bogus\n---\n")
+            # Then the narrow read still succeeds, unlike load()
+            self.assertEqual(sdd_flow_config.load_security_commands(tmp), [])
+            with self.assertRaises(sdd_flow_config.ConfigError):
+                sdd_flow_config.load(tmp)
+
+    def test_raises_on_an_unclosed_frontmatter_fence(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self.write(tmp, "---\nsecurity_commands: []\n")
+            with self.assertRaises(sdd_flow_config.ConfigError):
+                sdd_flow_config.load_security_commands(tmp)
 
 
 class Cli(unittest.TestCase):

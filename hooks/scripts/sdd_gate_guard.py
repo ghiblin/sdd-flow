@@ -17,7 +17,10 @@ command that:
 - runs a `gh` whose name or subcommand is a variable, or an `eval` of a variable;
 - runs `set-stage.py <n> complete|verified` (or a stage it cannot read) when
   the target worktree is not clean, no gate marker matches its `HEAD^{tree}`
-  (see `scripts/gate_marker.py`), or the target worktree is unclear.
+  (see `scripts/gate_marker.py`), the target worktree is unclear, or (while the
+  project's `security_commands` config key is non-empty) no security marker
+  matches that tree (see `scripts/run_security_commands.py`'s `sdd-security/<tree>`)
+  or the hook's narrow, dedicated read of just that one config key fails.
 
 The hook reads `gh` global flags (`-R`, `--repo`) before the subcommand, glued
 short flags (`-lLABEL`), the scripts of `bash -c`/`sh -c`/`zsh -c` and `eval`,
@@ -59,7 +62,10 @@ SHELLS = {"bash", "sh", "zsh", "dash", "ksh"}
 GH_VALUE_FLAGS = {"-R", "--repo", "--hostname"}
 API_MUTATIONS = ("closeissue", "addlabelstolabelable")
 ASSIGNMENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
-GATE_MARKER = Path(__file__).resolve().parent.parent.parent / "scripts" / "gate_marker.py"
+SCRIPTS_DIR = Path(__file__).resolve().parent.parent.parent / "scripts"
+GATE_MARKER = SCRIPTS_DIR / "gate_marker.py"
+SECURITY_RUNNER = SCRIPTS_DIR / "run_security_commands.py"
+SDD_FLOW_CONFIG = SCRIPTS_DIR / "sdd_flow_config.py"
 MAX_NESTING = 5
 
 CLOSE_REASON = (
@@ -387,12 +393,45 @@ def _heredoc_scripts(heredoc: Heredoc) -> list[str]:
     return [] if heredoc.quoted else _substitutions(heredoc.body)
 
 
+def _load_module(name: str, path: Path):
+    spec = importlib.util.spec_from_file_location(name, path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 def _gate_passed(repo: str) -> bool:
     try:
-        spec = importlib.util.spec_from_file_location("gate_marker", GATE_MARKER)
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
-        return module.check(Path(repo))
+        return _load_module("gate_marker", GATE_MARKER).check(Path(repo))
+    except Exception:
+        return False
+
+
+def _security_commands(repo: Path) -> list:
+    """A narrow, dedicated read of just the `security_commands` key, delegating to
+    `sdd_flow_config.load_security_commands()` — the frontmatter reader without
+    `load()`'s `_validate()`, so a malformed, unrelated key elsewhere in the file (for
+    example a `tiers.classification` typo) never affects this check. Missing config
+    file or missing key: empty list, the documented default. Raises on a genuine
+    read/parse failure of the frontmatter itself; the caller treats that as
+    fail-closed, the same as `_gate_passed`'s own except-Exception."""
+    config = _load_module("sdd_flow_config", SDD_FLOW_CONFIG)
+    return config.load_security_commands(repo)
+
+
+def _security_ok(repo: str) -> bool:
+    """True unless `security_commands` is configured but no security marker matches
+    the clean tree, or the narrow read of `security_commands` itself fails."""
+    try:
+        commands = _security_commands(Path(repo))
+    except Exception:
+        return False
+    if not commands:
+        return True
+    try:
+        runner = _load_module("run_security_commands", SECURITY_RUNNER)
+        tree = runner.tree_if_clean(Path(repo))
+        return tree is not None and runner.marker_path(Path(repo), tree).is_file()
     except Exception:
         return False
 
@@ -459,6 +498,13 @@ def _decide_command(command: str, cwd: str, level: int = 0) -> str | None:
                     f"`set-stage.py ... {stage}` is blocked: the worktree {cwd} is not "
                     "clean or no gate marker matches its HEAD^{tree}. Commit, then run "
                     "`scripts/check.sh` in that worktree."
+                )
+            if not _security_ok(cwd):
+                return (
+                    f"`set-stage.py ... {stage}` is blocked: the worktree {cwd} has a "
+                    "configured `security_commands` key but no security marker matches "
+                    "its HEAD^{tree} (or the hook could not read security_commands). Run "
+                    "`scripts/run_security_commands.py` in that worktree."
                 )
         if level < MAX_NESTING:
             for script in _inner_scripts(tokens):

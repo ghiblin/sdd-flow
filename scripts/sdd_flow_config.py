@@ -87,6 +87,7 @@ DEFAULTS: dict[str, Any] = {
         "enabled": True,
     },
     "rules_file_glob": "*/RULES.md",
+    "security_commands": [],
 }
 
 
@@ -104,6 +105,41 @@ def _frontmatter_text(path: Path) -> str:
     return text[3:end].strip("\n")
 
 
+def _split_top_level(text: str, sep: str = ",") -> list[str]:
+    """Split `text` on `sep`, except one inside a quoted string or `[ ]`/`{ }` nesting.
+
+    Lets an inline list hold mapping elements whose own values contain a comma (a
+    `run` shell command, for example `eslint --ext .js,.ts .`) without being split
+    apart, as long as that value is quoted.
+    """
+    parts: list[str] = []
+    current: list[str] = []
+    depth = 0
+    quote = ""
+    for ch in text:
+        if quote:
+            current.append(ch)
+            if ch == quote:
+                quote = ""
+            continue
+        if ch in "'\"":
+            quote = ch
+            current.append(ch)
+        elif ch in "[{":
+            depth += 1
+            current.append(ch)
+        elif ch in "]}":
+            depth -= 1
+            current.append(ch)
+        elif ch == sep and depth == 0:
+            parts.append("".join(current))
+            current = []
+        else:
+            current.append(ch)
+    parts.append("".join(current))
+    return parts
+
+
 def _coerce_scalar(raw: str) -> Any:
     raw = raw.strip()
     if raw in ("true", "True"):
@@ -112,7 +148,17 @@ def _coerce_scalar(raw: str) -> Any:
         return False
     if raw.startswith("[") and raw.endswith("]"):
         inner = raw[1:-1].strip()
-        return [] if not inner else [p.strip().strip("'\"") for p in inner.split(",")]
+        return [] if not inner else [_coerce_scalar(part) for part in _split_top_level(inner)]
+    if raw.startswith("{") and raw.endswith("}"):
+        inner = raw[1:-1].strip()
+        mapping: dict[str, Any] = {}
+        for pair in _split_top_level(inner):
+            pair = pair.strip()
+            if not pair:
+                continue
+            k, _, v = pair.partition(":")
+            mapping[k.strip()] = _coerce_scalar(v)
+        return mapping
     if raw.startswith(("'", '"')) and raw.endswith(("'", '"')) and len(raw) >= 2:
         return raw[1:-1]
     try:
@@ -148,14 +194,10 @@ def _parse_frontmatter(text: str) -> dict[str, Any]:
             child: dict[str, Any] = {}
             parent[key] = child
             stack.append((indent, child))
-        elif rest.startswith("{") and rest.endswith("}"):
-            inner = rest[1:-1].strip()
-            mapping: dict[str, Any] = {}
-            for pair in inner.split(","):
-                k, _, v = pair.partition(":")
-                mapping[k.strip()] = _coerce_scalar(v)
-            parent[key] = mapping
         else:
+            # `_coerce_scalar` itself parses an inline `{ ... }` map (one tier profile
+            # override, or one `{name, run}` security command), so no separate branch
+            # is needed here for that case.
             parent[key] = _coerce_scalar(rest)
     return root
 
@@ -207,6 +249,22 @@ def load(repo: Path | str = ".", config_path: str = DEFAULT_CONFIG_PATH) -> dict
         cfg = _deep_merge(DEFAULTS, parsed)
     _validate(cfg)
     return cfg
+
+
+def load_security_commands(
+    repo: Path | str = ".", config_path: str = DEFAULT_CONFIG_PATH
+) -> list[dict[str, Any]]:
+    """A narrow, dedicated read of just the `security_commands` key: the frontmatter
+    reader without `load()`'s `_validate()`, so a malformed, unrelated key elsewhere in
+    the file (for example a `tiers.classification` typo) never affects this read.
+    Missing config file or missing key: empty list, the documented default. Raises on a
+    genuine read/parse failure of the frontmatter itself; every caller treats that as
+    fail-closed, the same as a build-gate marker it cannot read."""
+    path = Path(repo) / config_path
+    if not path.is_file():
+        return []
+    parsed = _parse_frontmatter(_frontmatter_text(path))
+    return parsed.get("security_commands") or []
 
 
 def tier_profile(cfg: dict[str, Any], tier: int) -> dict[str, Any]:

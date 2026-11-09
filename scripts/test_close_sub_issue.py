@@ -167,6 +167,61 @@ class Close(Repo):
         self.assertIn("OPEN", message)
 
 
+class SecurityMarkerGate(Repo):
+    """close() additionally requires the security marker when `security_commands` is
+    configured, via the same narrow `sdd_flow_config.load_security_commands()` read
+    `sdd_gate_guard.py` uses for `set-stage.py <n> complete|verified`."""
+
+    def configure(self, frontmatter_body):
+        path = self.repo / ".claude"
+        path.mkdir(parents=True, exist_ok=True)
+        (path / "sdd-flow.local.md").write_text(f"---\n{frontmatter_body}\n---\n", encoding="utf-8")
+        self.commit("chore: configure (#7)")
+        self.mark()
+
+    def write_security_marker(self):
+        tree = git(self.repo, "rev-parse", "HEAD^{tree}")
+        rel = git(self.repo, "rev-parse", "--git-path", f"sdd-security/{tree}")
+        path = pathlib.Path(rel)
+        path = path if path.is_absolute() else self.repo / path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("ok\n")
+
+    def test_given_security_commands_configured_without_marker_then_it_refuses(self):
+        # Given security_commands configured but the security scan never ran
+        self.configure('security_commands: [{name: "ok", run: "true"}]')
+        # When the sub-issue is closed
+        ok, message = self.close()
+        # Then it refuses: the gate marker alone is not enough
+        self.assertFalse(ok)
+        self.assertIn("security marker", message)
+        self.assertFalse(self.gh.closed())
+
+    def test_given_security_commands_configured_with_marker_then_it_closes(self):
+        # Given security_commands configured and the security scan already ran on this tree
+        self.configure('security_commands: [{name: "ok", run: "true"}]')
+        self.write_security_marker()
+        # When the sub-issue is closed
+        ok, message = self.close()
+        # Then it closes: both markers match the clean tree
+        self.assertTrue(ok, message)
+        self.assertTrue(self.gh.closed())
+
+    def test_given_unreadable_security_commands_then_it_refuses(self):
+        # Given a config file whose frontmatter is never closed with a second `---` line
+        path = self.repo / ".claude"
+        path.mkdir(parents=True, exist_ok=True)
+        (path / "sdd-flow.local.md").write_text("---\nsecurity_commands: []\n", encoding="utf-8")
+        self.commit("chore: configure (#7)")
+        self.mark()
+        # When the sub-issue is closed
+        ok, message = self.close()
+        # Then it refuses: fail-closed, the same as an unreadable build-gate marker
+        self.assertFalse(ok)
+        self.assertIn("security_commands", message)
+        self.assertFalse(self.gh.closed())
+
+
 class Main(Repo):
     def test_main_exits_zero_on_a_close(self):
         out = io.StringIO()
