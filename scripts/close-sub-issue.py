@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Close an `sdd:task` sub-issue only when the gate passed on this tree and red came before green.
+"""Close an `sdd:task` sub-issue only when the gate (and, if configured, the security
+scan) passed on this tree and red came before green.
 
 Usage:
   close-sub-issue.py <main-issue-number> <child> [--base main] [--repo .]
@@ -8,10 +9,14 @@ This is the only way to close a sub-issue. It refuses (exit 1, reason on stderr)
 `<child>` is an open `sdd:task` sub-issue of `<main>`; the working tree is clean (no tracked
 change and no untracked, unignored file); a gate marker
 `$(git rev-parse --git-path sdd-gate/<tree>)` matches `HEAD^{tree}` (written by the project's
-gate script on a clean pass); and, unless the sub-issue carries `sdd:no-red-green`,
-`verify_red_green.py` finds a non-empty `test:` commit before a `feat:`/`fix:` commit for
-`(#<child>)` in `<base>...HEAD`. Then it runs `gh issue close <child> --reason completed` and
-re-reads the sub-issue, failing if its state is not CLOSED. Stdlib only; importable (`close`, `main`).
+gate script on a clean pass); if the project's `security_commands` key (read narrowly, the
+same as `sdd_gate_guard.py`'s own check) is non-empty, a security marker
+`$(git rev-parse --git-path sdd-security/<tree>)` also matches `HEAD^{tree}` (written by
+`run_security_commands.py` on a clean pass); and, unless the sub-issue carries
+`sdd:no-red-green`, `verify_red_green.py` finds a non-empty `test:` commit before a
+`feat:`/`fix:` commit for `(#<child>)` in `<base>...HEAD`. Then it runs `gh issue close <child>
+--reason completed` and re-reads the sub-issue, failing if its state is not CLOSED. Stdlib
+only; importable (`close`, `main`).
 """
 from __future__ import annotations
 
@@ -36,6 +41,8 @@ def _load(name: str, file: str):
 
 _lister = _load("list_sub_issues", "list-sub-issues.py")
 _red_green = _load("verify_red_green", "verify_red_green.py")
+_security_runner = _load("run_security_commands", "run_security_commands.py")
+_config = _load("sdd_flow_config", "sdd_flow_config.py")
 run_gh = _lister.run_gh
 
 
@@ -79,6 +86,15 @@ def close(parent: int, child: int, repo: Path | str = ".", base: str = "main") -
     tree = _git(repo, "rev-parse", "HEAD^{tree}")
     if not marker_file(repo, tree).is_file():
         return False, f"no gate marker matches HEAD^{{tree}} {tree}; run the build gate (scripts/check.sh)"
+    try:
+        security_commands = _config.load_security_commands(repo)
+    except Exception:
+        return False, "could not read security_commands from .claude/sdd-flow.local.md; fix the config file"
+    if security_commands and not _security_runner.marker_path(repo, tree).is_file():
+        return False, (
+            f"security_commands is configured but no security marker matches HEAD^{{tree}} "
+            f"{tree}; run scripts/run_security_commands.py"
+        )
     if EXEMPT not in labels:
         ok, message = _red_green.verify(child, repo=repo, base=base)
         if not ok:
