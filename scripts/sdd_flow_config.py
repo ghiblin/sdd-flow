@@ -251,6 +251,22 @@ def load(repo: Path | str = ".", config_path: str = DEFAULT_CONFIG_PATH) -> dict
     return cfg
 
 
+def load_security_commands(
+    repo: Path | str = ".", config_path: str = DEFAULT_CONFIG_PATH
+) -> list[dict[str, Any]]:
+    """A narrow, dedicated read of just the `security_commands` key: the frontmatter
+    reader without `load()`'s `_validate()`, so a malformed, unrelated key elsewhere in
+    the file (for example a `tiers.classification` typo) never affects this read.
+    Missing config file or missing key: empty list, the documented default. Raises on a
+    genuine read/parse failure of the frontmatter itself; every caller treats that as
+    fail-closed, the same as a build-gate marker it cannot read."""
+    path = Path(repo) / config_path
+    if not path.is_file():
+        return []
+    parsed = _parse_frontmatter(_frontmatter_text(path))
+    return parsed.get("security_commands") or []
+
+
 def tier_profile(cfg: dict[str, Any], tier: int) -> dict[str, Any]:
     """The profile for `tier` (0, 1 or 2): the project's override if given, else the default."""
     profiles = cfg.get("tiers", {}).get("profiles", DEFAULT_PROFILES)

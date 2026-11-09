@@ -63,6 +63,20 @@ class RunsNoCommandsWhenUnset(Repo):
         self.assertFalse(run_security_commands.marker_path(self.repo, self.tree()).exists())
 
 
+class RunsNoCommandsWhenUnrelatedConfigKeyIsMalformed(Repo):
+    def test_runs_no_commands_when_unrelated_config_key_is_malformed(self):
+        # Given an unrelated key with a value sdd_flow_config.load()'s _validate() would
+        # reject (tiers.classification is not a recognized value), while security_commands
+        # itself reads cleanly (absent, so empty) — the exact case the narrow read in
+        # sdd_flow_config.load_security_commands() exists to keep working
+        self.configure("tiers:\n  classification: bogus")
+        # When the security gate runs
+        ok, message = run_security_commands.run(self.repo)
+        # Then it passes: the narrow security_commands read never calls _validate()
+        self.assertTrue(ok, message)
+        self.assertFalse(run_security_commands.marker_path(self.repo, self.tree()).exists())
+
+
 class FailsWhenAnyCommandExitsNonzero(Repo):
     def test_fails_when_any_command_exits_nonzero(self):
         # Given a configured command that fails

@@ -408,18 +408,15 @@ def _gate_passed(repo: str) -> bool:
 
 
 def _security_commands(repo: Path) -> list:
-    """A narrow, dedicated read of just the `security_commands` key: the frontmatter
-    reader without `sdd_flow_config.load()`'s `_validate()`, so a malformed, unrelated
-    key elsewhere in the file (for example a `tiers.classification` typo) never affects
-    this check. Missing config file or missing key: empty list, the documented default.
-    Raises on a genuine read/parse failure of the frontmatter itself; the caller treats
-    that as fail-closed, the same as `_gate_passed`'s own except-Exception."""
+    """A narrow, dedicated read of just the `security_commands` key, delegating to
+    `sdd_flow_config.load_security_commands()` — the frontmatter reader without
+    `load()`'s `_validate()`, so a malformed, unrelated key elsewhere in the file (for
+    example a `tiers.classification` typo) never affects this check. Missing config
+    file or missing key: empty list, the documented default. Raises on a genuine
+    read/parse failure of the frontmatter itself; the caller treats that as
+    fail-closed, the same as `_gate_passed`'s own except-Exception."""
     config = _load_module("sdd_flow_config", SDD_FLOW_CONFIG)
-    path = repo / config.DEFAULT_CONFIG_PATH
-    if not path.is_file():
-        return []
-    parsed = config._parse_frontmatter(config._frontmatter_text(path))
-    return parsed.get("security_commands") or []
+    return config.load_security_commands(repo)
 
 
 def _security_ok(repo: str) -> bool:

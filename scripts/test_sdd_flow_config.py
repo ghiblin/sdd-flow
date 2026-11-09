@@ -120,6 +120,42 @@ class ConfigFile(unittest.TestCase):
         self.assertRegex(content, r"\|\s*`security_commands`\s*\|\s*`\[\]`\s*\|")
 
 
+class LoadSecurityCommands(unittest.TestCase):
+    """`load_security_commands()` is the narrow read `run_security_commands.py` and
+    `sdd_gate_guard.py` both use, so an unrelated malformed key never breaks either."""
+
+    def write(self, tmp, text):
+        (pathlib.Path(tmp) / ".claude").mkdir(parents=True, exist_ok=True)
+        (pathlib.Path(tmp) / ".claude" / "sdd-flow.local.md").write_text(text, encoding="utf-8")
+
+    def test_empty_list_when_no_config_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertEqual(sdd_flow_config.load_security_commands(tmp), [])
+
+    def test_parses_the_configured_commands(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self.write(tmp, '---\nsecurity_commands: [{name: "ok", run: "true"}]\n---\n')
+            self.assertEqual(
+                sdd_flow_config.load_security_commands(tmp), [{"name": "ok", "run": "true"}]
+            )
+
+    def test_never_validates_an_unrelated_malformed_key(self):
+        # Given tiers.classification set to a value load()'s _validate() would reject,
+        # while security_commands itself is absent (so empty)
+        with tempfile.TemporaryDirectory() as tmp:
+            self.write(tmp, "---\ntiers:\n  classification: bogus\n---\n")
+            # Then the narrow read still succeeds, unlike load()
+            self.assertEqual(sdd_flow_config.load_security_commands(tmp), [])
+            with self.assertRaises(sdd_flow_config.ConfigError):
+                sdd_flow_config.load(tmp)
+
+    def test_raises_on_an_unclosed_frontmatter_fence(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self.write(tmp, "---\nsecurity_commands: []\n")
+            with self.assertRaises(sdd_flow_config.ConfigError):
+                sdd_flow_config.load_security_commands(tmp)
+
+
 class Cli(unittest.TestCase):
     def test_get_prints_a_dotted_key(self):
         with tempfile.TemporaryDirectory() as tmp:

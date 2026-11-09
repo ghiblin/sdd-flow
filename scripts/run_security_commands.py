@@ -92,7 +92,7 @@ def run(repo: Path | str = ".") -> tuple[bool, str]:
     written: a dirty or changed tree at the end only withholds the marker.
     """
     repo = Path(repo)
-    commands: list[dict[str, Any]] = sdd_flow_config.load(repo).get("security_commands") or []
+    commands: list[dict[str, Any]] = sdd_flow_config.load_security_commands(repo)
     if not commands:
         return True, "no security_commands configured; nothing to run"
     tree = tree_if_clean(repo)
