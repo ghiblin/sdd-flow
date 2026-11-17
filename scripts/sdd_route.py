@@ -20,9 +20,18 @@ from sdd_script_tools import Parser, ToolError, load_open_decisions, parse_json,
 SKILL_SCRIPTS = Path(__file__).resolve().parent  # sdd-flow ships one shared scripts/ dir
 NEEDS_SPEC = SKILL_SCRIPTS / "needs-spec.py"
 LIST_SUB_ISSUES = SKILL_SCRIPTS / "list-sub-issues.py"
-APPROVE_RE = re.compile(r"^Approve the spec section\? \(draft (\d+)\)$")
+PLAN_APPROVE_RE = re.compile(r"^Approve the plan\? \(plan (\d+)\)$")
+SPEC_APPROVE_RE = re.compile(r"^Approve the spec section\? \(draft (\d+)\)$")
 BRANCH_PREFIX = "**Branch:**"
-KNOWN_STAGES = ("verified", "drafting-spec", "spec-approved", "implementing", "complete")
+KNOWN_STAGES = (
+    "verified",
+    "planning",
+    "plan-approved",
+    "drafting-spec",
+    "spec-approved",
+    "implementing",
+    "complete",
+)
 
 
 def run_gh(args: list[str]) -> str:
@@ -75,8 +84,8 @@ def _pr_route(branch: str) -> str:
         raise ToolError(f"cannot parse gh output: {exc}") from exc
 
 
-def _unchecked(issue: str, body: str) -> tuple[list[str], list[int]]:
-    """Return (decision lines, k of each unchecked approval line) of the open block."""
+def _unchecked(issue: str, body: str) -> tuple[list[str], list[int], list[int]]:
+    """Return (decision lines, k of each unchecked plan-approval line, k of each unchecked spec-approval line) of the open block."""
     od = load_open_decisions(SKILL_SCRIPTS / "open_decisions.py")
     body = od.normalize(body)
     if not body.endswith("\n"):
@@ -86,17 +95,21 @@ def _unchecked(issue: str, body: str) -> tuple[list[str], list[int]]:
     except SystemExit as exc:
         raise ToolError(str(exc)) from exc
     decisions: list[str] = []
-    approvals: list[int] = []
+    plan_approvals: list[int] = []
+    spec_approvals: list[int] = []
     for line in block:
         state, text = od.parse(line.lstrip())  # an indented line (a web-UI edit) counts too
         if state != "open" or text == "_none_":
             continue
-        match = APPROVE_RE.match(text)
-        if match:
-            approvals.append(int(match.group(1)))
+        plan_match = PLAN_APPROVE_RE.match(text)
+        spec_match = SPEC_APPROVE_RE.match(text)
+        if plan_match:
+            plan_approvals.append(int(plan_match.group(1)))
+        elif spec_match:
+            spec_approvals.append(int(spec_match.group(1)))
         else:
             decisions.append(text)
-    return decisions, approvals
+    return decisions, plan_approvals, spec_approvals
 
 
 def route(issue: str, after_sweep: bool) -> str:
@@ -117,16 +130,22 @@ def route(issue: str, after_sweep: bool) -> str:
     if stage == "verified":
         return _pr_route(_branch(issue, body))
 
-    decisions, approvals = _unchecked(issue, body)
+    decisions, plan_approvals, spec_approvals = _unchecked(issue, body)
     if decisions and not after_sweep:
         return f"route: decisions   count: {len(decisions)}"
 
+    if stage == "planning":
+        if plan_approvals:
+            return f"route: checkpoint-plan   plan: {max(plan_approvals)}"
+        return "route: stage-plan"
+    if stage == "plan-approved":
+        return "route: stage-2"
     if stage == "drafting-spec":
         needs = run_needs_spec(issue)
         if needs:
             return f"route: scoped-draft   sub-issues: {_join(needs)}"
-        if approvals:
-            return f"route: checkpoint-a   draft: {max(approvals)}"
+        if spec_approvals:
+            return f"route: checkpoint-a   draft: {max(spec_approvals)}"
         subs = run_open_sub_issues(issue)
         return f"route: stage-2   sub-issues: {_join(subs)}" if subs else "route: stage-2"
     if stage in ("spec-approved", "implementing"):

@@ -1,6 +1,6 @@
 """Stdlib tests for create-adr.py; everything happens on a temp-dir filesystem, no network.
 
-Run: python3 -m unittest discover -s skills/sdd-flow-draft/scripts -v
+Run: python3 -m unittest discover -s scripts -v
 """
 import contextlib
 import importlib.util

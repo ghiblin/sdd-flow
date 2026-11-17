@@ -7,8 +7,8 @@ command that:
 
 - runs `gh issue close` (sub-issues close only through `close-sub-issue.py`);
 - runs `gh issue edit --add-label` or `gh issue create --label` naming
-  `sdd:stage:spec-approved`, `sdd:stage:complete`, `sdd:stage:verified` or
-  `sdd:no-red-green` (in any
+  `sdd:stage:plan-approved`, `sdd:stage:spec-approved`, `sdd:stage:complete`,
+  `sdd:stage:verified` or `sdd:no-red-green` (in any
   letter case, as GitHub label names are case-insensitive), or a label it
   cannot read because it holds a variable or a command substitution;
 - runs `gh api` with a `closeIssue` or `addLabelsToLabelable` mutation, a
@@ -52,6 +52,7 @@ from pathlib import Path
 from typing import NamedTuple
 
 GUARDED_LABELS = (
+    "sdd:stage:plan-approved",
     "sdd:stage:spec-approved",
     "sdd:stage:complete",
     "sdd:stage:verified",

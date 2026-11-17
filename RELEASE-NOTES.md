@@ -1,5 +1,16 @@
 # Release notes
 
+## v0.2.0 (2026-11-17)
+
+New **Plan** stage and **Plan Review**, inserted between `sdd-flow-intent` and `sdd-flow-draft`, plus a backtrack path from drafting back to intent — a rework of the pipeline's front half based on real-world feedback:
+
+- New `sdd-flow-plan` skill: writes a high-level, issue-only plan (`## Plan` block on the main issue) — approach, components, major flow, trade-offs; explicitly no Gherkin, no code, no file-level task breakdown. New `sdd:stage:planning`/`sdd:stage:plan-approved` labels, inserted before `drafting-spec` in the state machine.
+- **Plan review**: the same PM/tech-lead/QA reviewer roles used for spec review now also run against the plan, tier-scoped by a new `plan_review_roles` config key (same defaults as `spec_review_roles`, independently tunable).
+- **ADR check** moves from `sdd-flow-draft` to `sdd-flow-plan`, and now runs at every tier unconditionally (previously gated behind a Tier-2-only `adr_check` flag, now removed). The ADR scripts/template (`create-adr.py`, `templates/adr.md`) moved from being local to `sdd-flow-draft` to the plugin's shared `scripts/`/`templates/` directories.
+- `sdd-flow-intent`'s elicitation is now an iterative **Challenge loop**: it raises one open question at a time (scope, constraints, edge cases, dependencies, non-goals, "how will we know this is done") and keeps going until a fresh pass finds nothing left to raise, instead of a single best-effort pass. Settled rounds are recorded as pre-resolved `## Open decisions` lines via a new `create-issue.py --resolved-decision` flag.
+- `sdd-flow-draft` now seeds Architecture/Decisions from the already-approved plan instead of inventing them from scratch, and defines a concrete **Backtrack** test: a finding that would change the plan, invalidate an ADR, or have changed the tier ends the stage with a new `NEEDS_REPLAN` block (the orchestrator re-dispatches `sdd-flow-intent`) instead of being patched in place.
+- "Approval criteria" is now explicit: the spec section's Criteria bullets support a third tag form, `[criteria: …]`, for a manual check, metric threshold, or migration-verification query — not just a BDD scenario or a named test.
+
 ## v0.1.3 (2026-11-04)
 
 - Fix `sdd_route.py` and `sdd_check_state.py` running `gh`/their helper scripts in this script's own directory instead of the caller's working directory. As an installed plugin that directory is the marketplace cache (`~/.claude/plugins/cache/...`), not a git repo at all, so every route/state check failed with `fatal: not a git repository`. Both now inherit the caller's cwd, like every other script in `scripts/`.

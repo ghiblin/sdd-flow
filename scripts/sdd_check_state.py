@@ -2,7 +2,7 @@
 """Verify the state that an SDD stage must leave behind.
 
 Usage:
-  sdd_check_state.py --issue <n> --stage <intent|draft|tdd|reconcile|pr-validate>
+  sdd_check_state.py --issue <n> --stage <intent|plan|draft|tdd|reconcile|pr-validate>
       [--worktree <dir>] [--child <c>] [--stopped]
       [--main-checkout <dir> --status-file <file> --main-sha <sha>]
 
@@ -19,7 +19,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from sdd_script_tools import Parser, ToolError, run_checked  # noqa: E402
 
-STAGES = ("intent", "draft", "tdd", "reconcile", "pr-validate")
+STAGES = ("intent", "plan", "draft", "tdd", "reconcile", "pr-validate")
 NEEDS_SPEC = Path(__file__).resolve().parent / "needs-spec.py"  # sdd-flow ships one shared scripts/ dir
 # The `**Stage:**` line pattern of set-stage.py. A unit test pins it to that script's
 # STAGE_LINE_RE, so the checker does not run the writer script to read one constant.
@@ -55,7 +55,9 @@ def _json(raw: str) -> dict:
 
 def _allowed(stage: str, stopped: bool, needs_spec: bool) -> set[str]:
     if stage == "intent":
-        return {"drafting-spec"}
+        return {"planning"}
+    if stage == "plan":
+        return {"plan-approved"}
     if stage == "draft":
         return {"spec-approved"}
     if stage == "tdd":

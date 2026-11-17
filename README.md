@@ -10,11 +10,11 @@ sdd-flow classifies every intent into one of three tiers and scales the pipeline
 
 ## Tiers
 
-| Tier | Qualifies when | Spec review | Implementation | Pre-PR review |
-|---|---|---|---|---|
-| **0 — mechanical** | No behavior change; build gate already green before the change (refactor, file split, rename, dependency bump) | None — one-paragraph description, no spec, no Gherkin | One batch: the whole intent is one unit, one worktree, no per-file sub-issues, no red/green | One code-review pass over the whole diff |
-| **1 — bugfix** | Behavior changes, but the root cause is already narrow and known | One reviewer role (tech lead), short spec = description + the regression test | Red → green → optional refactor, typically one sub-issue | One code-review round |
-| **2 — feature** | Real ambiguity or a judgment call | PM + tech lead + QA, up to 2 rounds | Red → green → optional refactor per sub-issue, reconcile after each | Independent code-review + spec-conformance fan-out, up to 2 rounds |
+| Tier | Qualifies when | Plan review | Spec review | Implementation | Pre-PR review |
+|---|---|---|---|---|---|
+| **0 — mechanical** | No behavior change; build gate already green before the change (refactor, file split, rename, dependency bump) | None — one-line plan, no review | None — one-paragraph description, no spec, no Gherkin | One batch: the whole intent is one unit, one worktree, no per-file sub-issues, no red/green | One code-review pass over the whole diff |
+| **1 — bugfix** | Behavior changes, but the root cause is already narrow and known | One reviewer role (tech lead) | One reviewer role (tech lead), short spec = description + the regression test | Red → green → optional refactor, typically one sub-issue | One code-review round |
+| **2 — feature** | Real ambiguity or a judgment call | PM + tech lead + QA, up to 2 rounds | PM + tech lead + QA, up to 2 rounds | Red → green → optional refactor per sub-issue, reconcile after each | Independent code-review + spec-conformance fan-out, up to 2 rounds |
 
 Classification happens once per intent (and once per split-off piece, if `sdd-flow-intent` splits a batch into independent pieces), proposed by a small heuristic (`scripts/tier_classifier.py`) and always confirmable or overridable by you — see `tiers.classification` below.
 
@@ -66,7 +66,7 @@ See `docs/config-reference.md` for the full key reference, including which alter
 ```
 .claude-plugin/plugin.json   plugin manifest
 agents/                      the orchestrator + its subagents (sdd-flow-*)
-skills/                      sdd-flow (orchestrator wrapper) + the 6 pipeline skills (sdd-flow-init/intent/draft/tdd/reconcile/pr-validate)
+skills/                      sdd-flow (orchestrator wrapper) + the 7 pipeline skills (sdd-flow-init/intent/plan/draft/tdd/reconcile/pr-validate)
 hooks/                       sdd_gate_guard.py (hard build-gate check) + sdd_feature_guard.py (implementer can't edit feature files)
 scripts/                     shared stdlib-Python helpers + their unittest suites
 templates/                   shared issue-body templates

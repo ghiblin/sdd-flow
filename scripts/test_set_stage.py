@@ -234,6 +234,10 @@ class SpecApprovedGate(unittest.TestCase):
         gh = self.attempt(BODY, labels=["sdd:feature", "sdd:stage:complete"], stage="drafting-spec")
         self.assertEqual(sorted(gh.labels), ["sdd:feature", "sdd:stage:drafting-spec"])
 
+    def test_planning_allowed_from_any_label(self):
+        gh = self.attempt(BODY, labels=["sdd:feature", "sdd:stage:complete"], stage="planning")
+        self.assertEqual(sorted(gh.labels), ["sdd:feature", "sdd:stage:planning"])
+
     def test_approval_line_outside_open_decisions_is_ignored(self):
         q = self.Q
         body = with_decisions("- [ ] " + q.format(k=1)).replace(
@@ -270,6 +274,77 @@ class SpecApprovedGate(unittest.TestCase):
         q = self.Q
         message = self.refused(with_decisions("- [x] " + q.format(k=1) + " → approved"), labels=["sdd:feature", "sdd:stage:implementing"])
         self.assertEqual(message, "issue #5: spec-approved is allowed only from drafting-spec or spec-approved")
+
+
+NO_PLAN_APPROVAL_LINE = (
+    "issue #5: no `Approve the plan? (plan <k>)` line in the `## Open decisions` block "
+    "(the block ends at the next heading or `<!-- sdd:end -->`)"
+)
+
+
+class PlanApprovedGate(unittest.TestCase):
+    """Mirrors SpecApprovedGate: the same open_decisions-approval-line guard, for `plan-approved`."""
+
+    Q = "Approve the plan? (plan {k})"
+
+    def attempt(self, body, labels=("sdd:feature", "sdd:stage:planning"), stage="plan-approved"):
+        gh = FakeGh(body=body, labels=labels)
+        set_stage.run_gh = gh
+        set_stage.set_stage(5, stage)
+        return gh
+
+    def refused(self, body, labels=("sdd:feature", "sdd:stage:planning"), stage="plan-approved"):
+        gh = FakeGh(body=body, labels=labels)
+        set_stage.run_gh = gh
+        with self.assertRaises(SystemExit) as ctx:
+            set_stage.set_stage(5, stage)
+        self.assertNotEqual(ctx.exception.code, 0)
+        self.assertEqual(edits_of(gh), [])
+        return str(ctx.exception.code)
+
+    def test_plan_approved_needs_approval(self):
+        q = self.Q
+        self.refused(with_decisions("- [ ] " + q.format(k=1)))
+        self.refused(with_decisions("- [x] " + q.format(k=1) + " → no"))
+        self.refused(with_decisions("- [x] " + q.format(k=1) + " → approved", "- [ ] " + q.format(k=2)))
+
+    def test_plan_approved_sets_label(self):
+        q = self.Q
+        for resolution in ("yes", "approved", " Approved. ", "YES"):
+            gh = self.attempt(with_decisions("- [x] " + q.format(k=1) + " → no", "- [x] " + q.format(k=2) + " → " + resolution))
+            self.assertEqual(sorted(gh.labels), ["sdd:feature", "sdd:stage:plan-approved"])
+            self.assertIn("**Stage:** plan-approved\n", gh.body)
+
+    def test_no_approval_line_message(self):
+        message = self.refused(BODY.replace("**Stage:** drafting-spec", "**Stage:** planning"))
+        self.assertEqual(message, NO_PLAN_APPROVAL_LINE)
+
+    def test_plan_approved_refused_from_another_label(self):
+        q = self.Q
+        message = self.refused(
+            with_decisions("- [x] " + q.format(k=1) + " → approved"),
+            labels=["sdd:feature", "sdd:stage:drafting-spec"],
+        )
+        self.assertEqual(message, "issue #5: plan-approved is allowed only from planning or plan-approved")
+
+    def test_plan_approved_rerun_is_a_no_op(self):
+        q = self.Q
+        body = with_decisions("- [x] " + q.format(k=1) + " → approved").replace(
+            "**Stage:** drafting-spec", "**Stage:** plan-approved")
+        gh = self.attempt(body, labels=["sdd:feature", "sdd:stage:plan-approved"])
+        self.assertEqual(sorted(gh.labels), ["sdd:feature", "sdd:stage:plan-approved"])
+        self.assertEqual(edits_of(gh), [])
+
+    def test_plan_and_spec_approval_lines_do_not_interfere(self):
+        """A plan-approval line must not satisfy the spec-approved gate, or vice versa."""
+        plan_q = self.Q.format(k=1)
+        spec_q = "Approve the spec section? (draft 1)"
+        body = with_decisions("- [x] " + plan_q + " → approved", "- [ ] " + spec_q)
+        gh = FakeGh(body=body, labels=["sdd:feature", "sdd:stage:drafting-spec"])
+        set_stage.run_gh = gh
+        with self.assertRaises(SystemExit) as ctx:
+            set_stage.set_stage(5, "spec-approved")
+        self.assertEqual(str(ctx.exception.code), "issue #5: the spec section is not approved")
 
 
 if __name__ == "__main__":

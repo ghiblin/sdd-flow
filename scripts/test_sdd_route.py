@@ -14,6 +14,7 @@ sdd_route = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(sdd_route)
 
 APPROVE = "Approve the spec section? (draft {k})"
+PLAN_APPROVE = "Approve the plan? (plan {k})"
 BRANCH = "**Branch:** sdd/7-demo\n"
 
 
@@ -166,6 +167,34 @@ class Stages(Run):
 
     def test_complete_routes_to_checkpoint_b(self):
         self.assertRoute("route: checkpoint-b", stage="complete", open_subs=[3])
+
+
+class PlanStage(Run):
+    def test_planning_without_approval_line_routes_to_stage_plan(self):
+        self.assertRoute("route: stage-plan", stage="planning")
+
+    def test_planning_with_approval_line_routes_to_checkpoint_plan(self):
+        self.assertRoute("route: checkpoint-plan   plan: 1", "- [ ] " + PLAN_APPROVE.format(k=1),
+                         stage="planning")
+
+    def test_checkpoint_plan_uses_highest_unchecked_k(self):
+        self.assertRoute("route: checkpoint-plan   plan: 10",
+                         "- [ ] " + PLAN_APPROVE.format(k=9), "- [ ] " + PLAN_APPROVE.format(k=10),
+                         "- [x] " + PLAN_APPROVE.format(k=11), stage="planning")
+
+    def test_plan_approval_line_does_not_count_as_a_decision(self):
+        self.assertRoute("route: checkpoint-plan   plan: 1", "- [ ] " + PLAN_APPROVE.format(k=1),
+                         "- [x] q", stage="planning")
+
+    def test_plan_approved_routes_to_stage_2(self):
+        self.assertRoute("route: stage-2", stage="plan-approved")
+
+    def test_a_leftover_plan_approval_line_does_not_affect_drafting_spec_routing(self):
+        # Neither a plain decision nor this stage's own approval line: ignored.
+        self.assertRoute("route: stage-2", "- [ ] " + PLAN_APPROVE.format(k=1), stage="drafting-spec")
+
+    def test_a_leftover_spec_approval_line_does_not_affect_planning_routing(self):
+        self.assertRoute("route: stage-plan", "- [ ] " + APPROVE.format(k=1), stage="planning")
 
 
 class Errors(Run):

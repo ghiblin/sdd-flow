@@ -21,6 +21,8 @@ EXPECTED = {
     "sdd:needs-spec": ("D93F0B", "SDD: sub-issue whose behaviour the spec does not describe yet"),
     "sdd:no-red-green": ("C5DEF5", "SDD: sub-issue the user exempted from the red-green check"),
     "sdd:follow-up": ("BFD4F2", "SDD: reviewer finding deferred to a later issue"),
+    "sdd:stage:planning": ("FBCA04", "SDD stage: writing the high-level plan"),
+    "sdd:stage:plan-approved": ("FBCA04", "SDD stage: plan approved"),
     "sdd:stage:drafting-spec": ("FBCA04", "SDD stage: drafting the spec"),
     "sdd:stage:spec-approved": ("FBCA04", "SDD stage: spec approved"),
     "sdd:stage:implementing": ("FBCA04", "SDD stage: implementing"),

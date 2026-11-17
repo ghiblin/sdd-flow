@@ -33,16 +33,16 @@ class NoConfigFile(unittest.TestCase):
             cfg = sdd_flow_config.load(tmp)
         t0 = sdd_flow_config.tier_profile(cfg, 0)
         self.assertEqual(t0["spec_review_roles"], [])
+        self.assertEqual(t0["plan_review_roles"], [])
         self.assertTrue(t0["batch_mode"])
         self.assertFalse(t0["refactor_step"])
-        self.assertFalse(t0["adr_check"])
         t1 = sdd_flow_config.tier_profile(cfg, 1)
         self.assertEqual(t1["spec_review_roles"], ["tech-lead"])
-        self.assertFalse(t1["adr_check"])
+        self.assertEqual(t1["plan_review_roles"], ["tech-lead"])
         t2 = sdd_flow_config.tier_profile(cfg, 2)
         self.assertEqual(t2["spec_review_roles"], ["pm", "tech-lead", "qa"])
+        self.assertEqual(t2["plan_review_roles"], ["pm", "tech-lead", "qa"])
         self.assertEqual(t2["code_review_rounds"], 2)
-        self.assertTrue(t2["adr_check"])
 
 
 class ConfigFile(unittest.TestCase):
@@ -74,6 +74,18 @@ class ConfigFile(unittest.TestCase):
             cfg = sdd_flow_config.load(tmp)
         t1 = sdd_flow_config.tier_profile(cfg, 1)
         self.assertEqual(t1["code_review_rounds"], 2)
+        self.assertEqual(t1["spec_review_roles"], ["tech-lead"])  # untouched default
+        self.assertEqual(t1["plan_review_roles"], ["tech-lead"])  # untouched default
+
+    def test_an_overridden_plan_review_roles_merges_over_its_default(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self.write(
+                tmp,
+                "---\ntiers:\n  profiles:\n    1: { plan_review_roles: [] }\n---\n",
+            )
+            cfg = sdd_flow_config.load(tmp)
+        t1 = sdd_flow_config.tier_profile(cfg, 1)
+        self.assertEqual(t1["plan_review_roles"], [])
         self.assertEqual(t1["spec_review_roles"], ["tech-lead"])  # untouched default
 
     def test_an_unimplemented_state_backend_is_a_hard_error_naming_the_issue(self):

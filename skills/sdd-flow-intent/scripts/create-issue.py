@@ -4,12 +4,21 @@
 Usage:
   create-issue.py --slug <kebab-slug> --intent "<one/two sentences>" \
       --spec-file docs/specs/<topic>/<file>.md [--spec-file ...] \
-      [--decision "<question>" ...] [--tier {0,1,2}]
+      [--decision "<question>" ...] [--resolved-decision "<question> -> <resolution>" ...] \
+      [--tier {0,1,2}]
 
-Creates the issue with the `sdd:feature` and `sdd:stage:drafting-spec` labels
+Creates the issue with the `sdd:feature` and `sdd:stage:planning` labels
 (plus `sdd:tier:<n>` when `--tier` is given — the tier the user confirmed for
 the sdd-flow tier_classifier.py proposal), then rewrites the whole body once
 with the real number in `**Branch:**`.
+
+`--decision` adds an open (unchecked) question. `--resolved-decision` adds a
+question already settled by the intent's Challenge loop, in the exact
+`<question> -> <resolution>` form `open_decisions.py` uses for a checked
+line — rendered before any open `--decision` lines. Use `->` (not the
+rendered `→`) on the command line; `open_decisions.resolved()` renders the
+real arrow.
+
 Re-reads the issue and exits non-zero if the body or labels do not match; any
 failure after the issue exists names it, so it is fixed rather than duplicated.
 Intent, spec files and decisions must each be a single line.
@@ -24,9 +33,13 @@ import subprocess
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent.parent / "scripts"))
+from open_decisions import new_question_text, resolved, single_line  # noqa: E402
+
 TEMPLATE = Path(__file__).resolve().parent.parent / "templates" / "main-issue.md"
-LABELS = ["sdd:feature", "sdd:stage:drafting-spec"]
+LABELS = ["sdd:feature", "sdd:stage:planning"]
 SLUG_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+RESOLVED_SEP = "->"
 
 
 def run_gh(args: list[str], stdin: str | None = None) -> str:
@@ -44,8 +57,24 @@ def run_gh(args: list[str], stdin: str | None = None) -> str:
     return result.stdout.strip()
 
 
-def render(slug: str, intent: str, spec_files: list[str], decisions: list[str], number: str) -> str:
-    lines = [f"- [ ] {d}" for d in decisions] or ["- [ ] _none_"]
+def _parse_resolved(raw: str) -> tuple[str, str]:
+    if RESOLVED_SEP not in raw:
+        raise SystemExit(f"a --resolved-decision must contain '{RESOLVED_SEP}': {raw!r}")
+    question, _, resolution = raw.partition(RESOLVED_SEP)
+    return new_question_text(question), single_line(resolution, "resolution")
+
+
+def render(
+    slug: str,
+    intent: str,
+    spec_files: list[str],
+    decisions: list[str],
+    resolved_decisions: list[str],
+    number: str,
+) -> str:
+    resolved_lines = [resolved(*_parse_resolved(r)) for r in resolved_decisions]
+    open_lines = [f"- [ ] {d}" for d in decisions]
+    lines = resolved_lines + open_lines or ["- [ ] _none_"]
     return string.Template(TEMPLATE.read_text(encoding="utf-8")).substitute(
         intent=intent,
         slug=slug,
@@ -56,8 +85,14 @@ def render(slug: str, intent: str, spec_files: list[str], decisions: list[str], 
 
 
 def create_issue(
-    slug: str, intent: str, spec_files: list[str], decisions: list[str], tier: int | None = None
+    slug: str,
+    intent: str,
+    spec_files: list[str],
+    decisions: list[str],
+    resolved_decisions: list[str] | None = None,
+    tier: int | None = None,
 ) -> int:
+    resolved_decisions = resolved_decisions or []
     if not SLUG_RE.match(slug):
         raise SystemExit(f"slug '{slug}' is not kebab-case")
     if not intent.strip() or not spec_files:
@@ -65,15 +100,21 @@ def create_issue(
     for text in [intent, *spec_files, *decisions]:
         if not text.strip() or "\n" in text.strip():
             raise SystemExit(f"each intent, spec file and decision must be one non-empty line: {text!r}")
+    for raw in resolved_decisions:
+        if "\n" in raw.strip():
+            raise SystemExit(f"each resolved decision must be one non-empty line: {raw!r}")
     intent = intent.strip()
     spec_files = [f.strip() for f in spec_files]
     decisions = [d.strip() for d in decisions]
+    resolved_decisions = [r.strip() for r in resolved_decisions]
+    for raw in resolved_decisions:  # validate shape up front, before anything is created
+        _parse_resolved(raw)
 
     if tier is not None and tier not in (0, 1, 2):
         raise SystemExit(f"tier must be 0, 1 or 2, got {tier!r}")
     labels = [*LABELS, f"sdd:tier:{tier}"] if tier is not None else LABELS
 
-    draft = render(slug, intent, spec_files, decisions, number="<issue-number>")
+    draft = render(slug, intent, spec_files, decisions, resolved_decisions, number="<issue-number>")
     label_args = [a for label in labels for a in ("--label", label)]
     url = run_gh(["issue", "create", "--title", slug, *label_args, "--body-file", "-"], stdin=draft)
     match = re.search(r"/issues/(\d+)\s*$", url)
@@ -84,7 +125,7 @@ def create_issue(
         )
     number = match.group(1)
 
-    body = render(slug, intent, spec_files, decisions, number=number)
+    body = render(slug, intent, spec_files, decisions, resolved_decisions, number=number)
     try:
         run_gh(["issue", "edit", number, "--body-file", "-"], stdin=body)
     except SystemExit as err:
@@ -117,9 +158,21 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--intent", required=True)
     parser.add_argument("--spec-file", action="append", required=True, dest="spec_files")
     parser.add_argument("--decision", action="append", default=[], dest="decisions")
+    parser.add_argument(
+        "--resolved-decision", action="append", default=[], dest="resolved_decisions"
+    )
     parser.add_argument("--tier", type=int, choices=[0, 1, 2], default=None)
     args = parser.parse_args(argv)
-    print(create_issue(args.slug, args.intent, args.spec_files, args.decisions, args.tier))
+    print(
+        create_issue(
+            args.slug,
+            args.intent,
+            args.spec_files,
+            args.decisions,
+            args.resolved_decisions,
+            args.tier,
+        )
+    )
 
 
 if __name__ == "__main__":

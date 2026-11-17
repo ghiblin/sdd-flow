@@ -19,7 +19,7 @@ One-time per-repository setup for the SDD workflow: the GitHub issue label set t
    python3 "<base>/scripts/create-labels.py"
    ```
 
-   It creates `sdd:feature`, `sdd:task`, `sdd:needs-spec`, `sdd:no-red-green`, `sdd:follow-up` and the five `sdd:stage:*` labels (`drafting-spec`, `spec-approved`, `implementing`, `complete`, `verified`). It prints one `created <name>` or `present <name>` line per label. Then it re-reads the label list. A non-zero exit means a label is missing or mismatched. Stop. Do not retry blindly. Report the failure. Its tests run with `python3 -m unittest discover -s "<base>/scripts"`.
+   It creates `sdd:feature`, `sdd:task`, `sdd:needs-spec`, `sdd:no-red-green`, `sdd:follow-up` and the seven `sdd:stage:*` labels (`planning`, `plan-approved`, `drafting-spec`, `spec-approved`, `implementing`, `complete`, `verified`). It prints one `created <name>` or `present <name>` line per label. Then it re-reads the label list. A non-zero exit means a label is missing or mismatched. Stop. Do not retry blindly. Report the failure. Its tests run with `python3 -m unittest discover -s "<base>/scripts"`.
 
    The script requires a green `gh auth status` and a GitHub `origin`. If the script fails on auth, stop. Tell the user to run `gh auth login`.
 3. If `<repo-root>/docs/specs/` doesn't exist, create it. Living spec files go here, one per module/bounded-context, named `<module-slug>.md`. Once there are more than a handful, group them into topic folders (`docs/specs/<topic>/<module-slug>.md`).
