@@ -1,6 +1,6 @@
 ---
 name: sdd-flow
-description: Drives one SDD feature end to end (sdd-flow-intent → sdd-flow-draft → sdd-flow-tdd ⇄ sdd-flow-reconcile → sdd-flow-pr-validate) by dispatching one subagent per stage and surfacing every user question. Launch as the main session - claude --agent sdd-flow "<intent>" or claude --agent sdd-flow "#<issue>".
+description: Drives one SDD feature end to end (sdd-flow-intent → sdd-flow-plan → sdd-flow-draft ⇄ sdd-flow-intent (replan) → sdd-flow-tdd ⇄ sdd-flow-reconcile → sdd-flow-pr-validate) by dispatching one subagent per stage and surfacing every user question. Launch as the main session - claude --agent sdd-flow "<intent>" or claude --agent sdd-flow "#<issue>".
 tools: Agent, SendMessage, AskUserQuestion, PushNotification, ToolSearch, Bash, Read, Skill
 hooks:
   PreToolUse:
@@ -44,12 +44,13 @@ Each stage runs in a **fresh** subagent of the agent type that this table gives 
 | Skill | Agent type |
 |---|---|
 | `sdd-flow-intent` | `sdd-flow-stage` |
+| `sdd-flow-plan` | `sdd-flow-stage` |
 | `sdd-flow-draft` | `sdd-flow-spec-writer` |
 | `sdd-flow-tdd` | `sdd-flow-implementer` |
 | `sdd-flow-reconcile` | `sdd-flow-stage` |
 | `sdd-flow-pr-validate` | `sdd-flow-stage` |
 
-Each of these agents (`.claude/agents/<agent type>.md`) inherits every tool (it has no `tools:` allowlist) and adds the `sdd_gate_guard.py` PreToolUse hook. This hook denies a raw `gh issue close`, a raw `gh issue edit` that adds `sdd:stage:complete`, `sdd:stage:verified` or `sdd:no-red-green`, and `set-stage.py <n> complete|verified` without a gate marker on the clean `HEAD^{tree}`. `sdd-flow-implementer` also adds the `sdd_feature_guard.py` hook, which denies a write to a `*.feature` file. Never dispatch a stage as another agent type: it would run without its hooks. The four read-only reviewer agents (`sdd-flow-spec-reviewer-pm`, `sdd-flow-spec-reviewer-tech-lead`, `sdd-flow-spec-reviewer-qa` and `sdd-flow-code-reviewer`) run only in **Spec review**, **Code review** and **Independent reviews**. The prompt of a stage is:
+Each of these agents (`.claude/agents/<agent type>.md`) inherits every tool (it has no `tools:` allowlist) and adds the `sdd_gate_guard.py` PreToolUse hook. This hook denies a raw `gh issue close`, a raw `gh issue edit` that adds `sdd:stage:plan-approved`, `sdd:stage:spec-approved`, `sdd:stage:complete`, `sdd:stage:verified` or `sdd:no-red-green`, and `set-stage.py <n> complete|verified` without a gate marker on the clean `HEAD^{tree}`. `sdd-flow-implementer` also adds the `sdd_feature_guard.py` hook, which denies a write to a `*.feature` file. Never dispatch a stage as another agent type: it would run without its hooks. The four read-only reviewer agents (`sdd-flow-spec-reviewer-pm`, `sdd-flow-spec-reviewer-tech-lead`, `sdd-flow-spec-reviewer-qa` and `sdd-flow-code-reviewer`) run only in **Plan review**, **Spec review**, **Code review** and **Independent reviews**. The prompt of a stage is:
 
 ```
 You are a subagent of the `sdd` orchestrator agent.
@@ -101,9 +102,16 @@ rules: <crate>/RULES.md, ...
 constitution: constitution.md
 prior findings: <none | findings being re-checked>
 
-6. Review rounds of sdd-flow-draft and sdd-flow-tdd only (items 7 and 8; sdd-flow-pr-validate follows its skill): you cannot start subagents, so you ask for each review with a block. Fix each blocking finding and commit it. File each follow-up finding as an issue with your skill's `create-follow-up.py`. In round 2, file only a follow-up finding that round 1 did not file. Ask for round 2 only if round 1 had a blocking finding. Never ask for a round 3. After round 2, record each blocking finding that is still open as an `## Open decisions` question, and ask the user with one NEEDS_INPUT per finding (item 1). Apply the answer of the user, and do not ask for another review.
+6. Review rounds of sdd-flow-plan, sdd-flow-draft and sdd-flow-tdd only (items 7, 8 and 9; sdd-flow-pr-validate follows its skill): you cannot start subagents, so you ask for each review with a block. Fix each blocking finding and commit it. File each follow-up finding as an issue with your skill's `create-follow-up.py`. In round 2, file only a follow-up finding that round 1 did not file. Ask for round 2 only if round 1 had a blocking finding. Never ask for a round 3. After round 2, record each blocking finding that is still open as an `## Open decisions` question, and ask the user with one NEEDS_INPUT per finding (item 1). Apply the answer of the user, and do not ask for another review.
 
-7. sdd-flow-draft only, but not for a scenario change: After step 5 commits the spec and the `@wip` scenarios, and before step 6 finishes the draft, end your turn with a NEEDS_SPEC_REVIEW block. The results come back in a message starting "SPEC REVIEW RESULTS:". Do not ask for the approval while a blocking finding is open. Step 7 then asks the user to approve the spec section: it is a NEEDS_INPUT (item 1) whose question is `Approve the spec section? (draft <k>)`.
+7. sdd-flow-plan only: After writing (or amending) the `## Plan` block and settling every ADR check question, and before asking for the approval, end your turn with a NEEDS_PLAN_REVIEW block. The results come back in a message starting "PLAN REVIEW RESULTS:". Do not ask for the approval while a blocking finding is open. The approval question is `Approve the plan? (plan <k>)`.
+
+NEEDS_PLAN_REVIEW
+issue: #<n>   round: <1 | 2>
+diff: <base-sha>..HEAD -- docs/adr (the Plan itself is an issue-body edit, not a diffable file; name any new/changed docs/adr/*.md this round)
+prior findings: <none | blocking findings being re-checked; follow-up findings already filed>
+
+8. sdd-flow-draft only, but not for a scenario change: After step 5 commits the spec and the `@wip` scenarios, and before step 6 finishes the draft, end your turn with a NEEDS_SPEC_REVIEW block. The results come back in a message starting "SPEC REVIEW RESULTS:". Do not ask for the approval while a blocking finding is open. Step 7 then asks the user to approve the spec section: it is a NEEDS_INPUT (item 1) whose question is `Approve the spec section? (draft <k>)`.
 
 NEEDS_SPEC_REVIEW
 issue: #<n>   round: <1 | 2>
@@ -111,7 +119,7 @@ spec sections: <paths#headings>
 diff: <base-sha>..HEAD -- <spec files> <feature files> <step-definition files>
 prior findings: <none | blocking findings being re-checked; follow-up findings already filed>
 
-8. sdd-flow-tdd only: After the build gate of step 8, and before step 9 closes the sub-issue, end your turn with a NEEDS_CODE_REVIEW block. The results come back in a message starting "CODE REVIEW RESULTS:". Do not close the sub-issue while a blocking finding is open. When no blocking finding is open and fix commits landed after the step 8 gate, run the build gate again on the clean tree. Then close it with `close-sub-issue.py`.
+9. sdd-flow-tdd only: After the build gate of step 8, and before step 9 closes the sub-issue, end your turn with a NEEDS_CODE_REVIEW block. The results come back in a message starting "CODE REVIEW RESULTS:". Do not close the sub-issue while a blocking finding is open. When no blocking finding is open and fix commits landed after the step 8 gate, run the build gate again on the clean tree. Then close it with `close-sub-issue.py`.
 
 NEEDS_CODE_REVIEW
 issue: #<n>   sub-issue: #<child>   round: <1 | 2>
@@ -120,12 +128,19 @@ spec sections: <paths#headings>
 rules: <crate>/RULES.md, ...
 prior findings: <none | blocking findings being re-checked; follow-up findings already filed>
 
-9. sdd-flow-tdd only: When the user approves a new or changed scenario, do not edit the feature file. Make the worktree clean first. Save your uncommitted work in the whole worktree (`:/`), except feature files, as the patch `sdd-wip-<child>.patch` in the git directory of this worktree, then run `git reset -q --hard`. Do not use `git stash`. After the change, apply the patch with `git apply --3way` from the top of the worktree, and resolve each conflict before you delete the patch. Then run `remove-wip.py` again for each scenario whose tag you removed, except a scenario that the change renamed or changed. End your turn with a NEEDS_SCENARIO_CHANGE block. The orchestrator gets the change written, then sends you a message starting "SCENARIO CHANGED: <commit sha>". Then continue from your red step.
+10. sdd-flow-tdd only: When the user approves a new or changed scenario, do not edit the feature file. Make the worktree clean first. Save your uncommitted work in the whole worktree (`:/`), except feature files, as the patch `sdd-wip-<child>.patch` in the git directory of this worktree, then run `git reset -q --hard`. Do not use `git stash`. After the change, apply the patch with `git apply --3way` from the top of the worktree, and resolve each conflict before you delete the patch. Then run `remove-wip.py` again for each scenario whose tag you removed, except a scenario that the change renamed or changed. End your turn with a NEEDS_SCENARIO_CHANGE block. The orchestrator gets the change written, then sends you a message starting "SCENARIO CHANGED: <commit sha>". Then continue from your red step.
 
 NEEDS_SCENARIO_CHANGE
 issue: #<n>   sub-issue: #<child>
 feature file: <repo-relative path>
 change: <the change that the user approved, verbatim>
+
+11. sdd-flow-draft only: When a finding — your own or from Spec review — meets your skill's Backtrack test (it would change the `## Plan` block, invalidates an ADR, or would have changed the tier), do not fix it in place. End your turn with a NEEDS_REPLAN block instead of continuing to the approval steps. This block ends your run, and you are not resumed: the orchestrator dispatches a fresh `sdd-flow-intent` subagent with the discovery as its stage note.
+
+NEEDS_REPLAN
+issue: #<n>   stage: sdd-flow-draft
+discovery: <the solution-impacting finding, verbatim>
+test met: <plan-content | adr-invalidated | tier-changed>
 ```
 
 ## Relay loop (after every subagent turn)
@@ -135,13 +150,15 @@ Read the **first line** of the subagent's final message:
 - `DONE` → run **State verification**, then go to the next stage.
 - `NEEDS_INPUT` →
   1. **Notify** `#<n> <stage>: decision needed — <question, ≤80 chars>`.
-  2. `AskUserQuestion` with the subagent's question and options, in order. The first option gets the "(Recommended)" suffix. Give at most 4 options; the user can always type their own via Other. Header (≤12 chars): `Intent`, `Draft`, `TDD`, `Reconcile`, or `PR validate`.
+  2. `AskUserQuestion` with the subagent's question and options, in order. The first option gets the "(Recommended)" suffix. Give at most 4 options; the user can always type their own via Other. Header (≤12 chars): `Intent`, `Plan`, `Draft`, `TDD`, `Reconcile`, or `PR validate`.
   3. `SendMessage` to **the same subagent**: `USER ANSWER: <the chosen option, or the user's free text verbatim — never paraphrased, never mapped to the nearest option>`.
   4. Read its next final message and loop.
 - `NEEDS_REVIEWS` → run **Independent reviews**. A `NEEDS_REVIEWS` ends the turn of its subagent, which is not resumed. Then you dispatch a new `sdd-flow-stage` subagent with the results (see **Independent reviews**), and loop on that one. This supersedes the `SendMessage` rule of the other review blocks.
+- `NEEDS_PLAN_REVIEW` → run **Plan review**, `SendMessage` the results to the same subagent, and loop.
 - `NEEDS_SPEC_REVIEW` → run **Spec review**, `SendMessage` the results to the same subagent, and loop.
 - `NEEDS_CODE_REVIEW` → run **Code review**, `SendMessage` the results to the same subagent, and loop.
 - `NEEDS_SCENARIO_CHANGE` → run **Scenario change**, then loop on the same implementer.
+- `NEEDS_REPLAN` → run **Replan**. A `NEEDS_REPLAN` ends the turn of its subagent, which is not resumed. You dispatch a fresh `sdd-flow-stage` subagent for `sdd-flow-intent` with the discovery as its stage note (see **Replan**), and loop on that one.
 - Anything else (no marker, an error, the subagent stopped) → **Failure**.
 
 Wait for each result. Never predict or summarise a subagent's result before it arrives.
@@ -153,11 +170,12 @@ Wait for each result. Never predict or summarise a subagent's result before it a
 | # | Stage | Subagent skill | Then |
 |---|---|---|---|
 | 1 | Intent | `sdd-flow-intent`, stage note: "If step 4 finds independent pieces, do not create worktrees or dispatch anything: return NEEDS_INPUT proposing the split. If the user accepts, run step 5 once per piece and report DONE with `issues: #a, #b, …` instead of a single issue." | Capture `<n>`, slug, worktree and branch from the `DONE` block; go to 2. If the intent was split, see **Split**. |
-| 2 | Draft | `sdd-flow-draft` | The subagent ends with a `NEEDS_INPUT` for the approval. Go to **Checkpoint A**. After the approval, the label is `sdd:stage:spec-approved`. Then 3. |
-| 3 | Implement | `sdd-flow-tdd`, one fresh subagent per open sub-issue. Stage note for the first: "Create the sub-issues if none exist, then work only on the first open one; stop after closing it. Do not run sdd-flow-reconcile, even past the session budget of step 10: the orchestrator runs it next." For later ones: "Work only on sub-issue #<child>; stop after closing it. Do not run sdd-flow-reconcile, even past the session budget of step 10: the orchestrator runs it next." | After each tdd subagent, one fresh `sdd-flow-reconcile` subagent with stage note "You are the orchestrator's checkpoint — do not tell the user to open a new session; report DONE." The first `sdd-flow-tdd` subagent moves the label from `sdd:stage:spec-approved` to `sdd:stage:implementing`. Repeat 3 while the label is `sdd:stage:implementing`. Go to 2 as a **Scoped draft** when it is `sdd:stage:drafting-spec`. Go to 4 when it is `sdd:stage:complete`. |
-| 4 | Validate | `sdd-flow-pr-validate`, after the **Open decisions sweep** and **Checkpoint B** | When `DONE` with label `sdd:stage:verified`: **Notify** `#<n>: verified — PR ready`, report the PR URL and that `${CLAUDE_PLUGIN_ROOT}/scripts/merge_pr.py` handles merge + teardown, then stop. |
+| 2 | Plan | `sdd-flow-plan` | The subagent ends with a `NEEDS_INPUT` for the approval. Go to **Checkpoint Plan**. After the approval, the label is `sdd:stage:plan-approved`. Then 3. |
+| 3 | Draft | `sdd-flow-draft` | The subagent ends with a `NEEDS_INPUT` for the approval, **or** a `NEEDS_REPLAN` block (see **Replan**). Go to **Checkpoint A**. After the approval, the label is `sdd:stage:spec-approved`. Then 4. |
+| 4 | Implement | `sdd-flow-tdd`, one fresh subagent per open sub-issue. Stage note for the first: "Create the sub-issues if none exist, then work only on the first open one; stop after closing it. Do not run sdd-flow-reconcile, even past the session budget of step 10: the orchestrator runs it next." For later ones: "Work only on sub-issue #<child>; stop after closing it. Do not run sdd-flow-reconcile, even past the session budget of step 10: the orchestrator runs it next." | After each tdd subagent, one fresh `sdd-flow-reconcile` subagent with stage note "You are the orchestrator's checkpoint — do not tell the user to open a new session; report DONE." The first `sdd-flow-tdd` subagent moves the label from `sdd:stage:spec-approved` to `sdd:stage:implementing`. Repeat 4 while the label is `sdd:stage:implementing`. Go to 3 as a **Scoped draft** when it is `sdd:stage:drafting-spec`. Go to 5 when it is `sdd:stage:complete`. |
+| 5 | Validate | `sdd-flow-pr-validate`, after the **Open decisions sweep** and **Checkpoint B** | When `DONE` with label `sdd:stage:verified`: **Notify** `#<n>: verified — PR ready`, report the PR URL and that `${CLAUDE_PLUGIN_ROOT}/scripts/merge_pr.py` handles merge + teardown, then stop. |
 
-**Tier 0/1 shrink stages 2 and 3, they don't skip them.** The stage numbering, labels and state machine above are the same for every tier — what changes is how much each stage's own skill does, per its tier profile (`get-tier-profile`, read by `sdd-flow-draft`/`sdd-flow-tdd`/`sdd-flow-pr-validate` themselves): Tier 0's draft is a one-paragraph note with no spec-review loop and no Gherkin, and its implement stage is one batch commit with no red/green and no per-file sub-issues; Tier 1's draft gets one reviewer role instead of three. Checkpoint A still runs (the user still approves what was drafted, however short); it just has far less to approve. Do not special-case the stage table itself — special-case only what each skill does inside its stage, driven by the tier profile.
+**Tier 0/1 shrink stages 2, 3 and 4, they don't skip them.** The stage numbering, labels and state machine above are the same for every tier — what changes is how much each stage's own skill does, per its tier profile (`get-tier-profile`, read by `sdd-flow-plan`/`sdd-flow-draft`/`sdd-flow-tdd`/`sdd-flow-pr-validate` themselves): Tier 0's plan is a one-line note with no Plan review, and its draft is a one-paragraph note with no spec-review loop and no Gherkin, and its implement stage is one batch commit with no red/green and no per-file sub-issues; Tier 1's plan and draft each get one reviewer role instead of three. Checkpoint Plan and Checkpoint A still run (the user still approves what was drafted, however short); they just have far less to approve. Do not special-case the stage table itself — special-case only what each skill does inside its stage, driven by the tier profile.
 
 ### Scoped draft
 
@@ -170,6 +188,12 @@ A scoped draft writes the spec text for work that a reconcile pass added. Use it
 
 ### Checkpoints
 
+- **Plan — after planning:** it starts when a `sdd-flow-plan` subagent ends with a `NEEDS_INPUT` whose question starts with `Approve the plan?`. Do not relay that question yet.
+  1. **Notify** `#<n>: plan drafted — review before spec work begins`.
+  2. Show the user the issue's `## Plan` block (read it from `gh issue view <n> --json body` and extract the text between the `## Plan` heading and the next heading or `<!-- sdd:end -->`) and any new ADR files: `base=$(git -C <worktree> merge-base HEAD main origin/main 2>/dev/null || git -C <worktree> merge-base HEAD main 2>/dev/null || git -C <worktree> merge-base HEAD origin/main) && [ -n "$base" ] && git -C <worktree> diff --stat "$base" -- docs/adr` first, then the same command without `--stat` to show the content.
+  3. Also `Read` every new file that `git -C <worktree> status --porcelain -uall -- docs/adr` lists as untracked (`??`).
+  4. Only now relay the question: `AskUserQuestion` with `Approve the plan? (plan <k>)`, and the options `Approve` / `Request changes`. On `Approve`, resume the subagent with `USER ANSWER: approved`. It checks the approval line off and sets `sdd:stage:plan-approved`.
+  5. On changes: dispatch a fresh `sdd-flow-plan` subagent with the stage note "The user requested these changes to the plan: <verbatim>". Then repeat Checkpoint Plan.
 - **A — after draft:** it starts when a `sdd-flow-draft` subagent ends with a `NEEDS_INPUT` whose question starts with `Approve the spec section?`. Do not relay that question yet.
   1. **Notify** `#<n>: spec drafted — review before implementation`.
   2. Show the user the drafted section(s), the drafted `@wip` scenarios and their step-definition stubs, committed or not.
@@ -181,7 +205,7 @@ A scoped draft writes the spec text for work that a reconcile pass added. Use it
   4. Only now relay the question: `AskUserQuestion` with the question of the block, `Approve the spec section? (draft <k>)`, and the options `Approve` / `Request changes`. The user approves the spec and the scenarios together. On `Approve`, resume the subagent with `USER ANSWER: approved`. It checks the approval line off and sets `sdd:stage:spec-approved`.
   5. On changes: dispatch a fresh `sdd-flow-draft` subagent with the stage note "The user requested these changes to the draft: <verbatim>". After a scoped draft, keep the same scoped base. The first scoped draft cleared the `sdd:needs-spec` labels, so only the stage note names the sub-issues now. Start that stage note with "Scoped draft repeat: write the spec text only for the sub-issues #<a>, #<b>". Then repeat checkpoint A.
 - **Open decisions sweep** (before Checkpoint B, and on Resume before re-entering):
-  1. Read the unchecked `- [ ]` lines of the issue's `## Open decisions`. Ignore `_none_` and an `Approve the spec section? (draft <k>)` line: only Checkpoint A asks it, after the diff.
+  1. Read the unchecked `- [ ]` lines of the issue's `## Open decisions`. Ignore `_none_`, an `Approve the plan? (plan <k>)` line (only Checkpoint Plan asks it) and an `Approve the spec section? (draft <k>)` line (only Checkpoint A asks it, after the diff).
   2. For each line, in order:
      1. **Notify** `#<n>: open decision — <line, ≤80 chars>`.
      2. Call `AskUserQuestion` with the line as the question and header `Decision`. Take its options from the line if the line lists any. Else, offer `Decide now` and `Leave open`. `Decide now` collects free text per **Collecting free text**.
@@ -189,6 +213,20 @@ A scoped draft writes the spec text for work that a reconcile pass added. Use it
   4. Report each `Leave open` answer to the user.
   5. Run `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/sdd_route.py <n> --after-sweep` and act on its line (see the table under **Resume**). If the line is `checkpoint-b` and a `Leave open` answer remains, print the resume command in place of Checkpoint B. Then stop.
 - **B — before pr-validate:** **Notify** `#<n>: implementation complete — ready to validate and open the PR`; `AskUserQuestion` "Run sdd-flow-pr-validate now (build gate, reviews, push, PR)?" — `Yes` / `Not now`. A session has dispatched a stage when the orchestrator has dispatched any stage subagent since it started. The Open decisions sweep counts. In such a session offer `Not now` first, as the recommended option, so that pr-validate starts in a fresh session. In a session that has dispatched no stage (a resume at stage `complete`), offer `Yes` first, so a resume does not loop. On `Not now`: print `claude --agent sdd-flow "#<n>"` as the resume command. Then stop.
+
+## Plan review (`NEEDS_PLAN_REVIEW`)
+
+The plan writer asks for this review after it writes the `## Plan` block and settles every ADR check question, and before it asks for the approval. Each plan has one loop of at most two review rounds. A "Request changes" repeat at Checkpoint Plan starts a new loop with its own two rounds. Round 2 re-checks the prior findings and reviews whatever changed since round 1. A block with a round other than 1 or 2 is a **Failure**: start no review.
+
+1. Read the issue's `## Plan` block (`gh issue view <n> --json body`, extracted between the `## Plan` heading and the next heading or `<!-- sdd:end -->`). If the block's diff field names new or changed `docs/adr/*.md` files, rewrite that diff range against the feature branch the same way **Spec review** step 1 does.
+2. **Tier-scoped reviewer roles.** Read the issue's `sdd:tier:<n>` label and load `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/sdd_flow_config.py . get-tier-profile <n>`. Its `plan_review_roles` names which of the three roles run this round — same mapping as Spec review (`pm` → `sdd-flow-spec-reviewer-pm`, `tech-lead` → `sdd-flow-spec-reviewer-tech-lead`, `qa` → `sdd-flow-spec-reviewer-qa`). An empty list (Tier 0's default) means skip straight to step 4 with `PLAN REVIEW RESULTS: NONE`. Tier 2's default is all three, in parallel; Tier 1's default is `tech-lead` alone.
+3. Launch every role from step 2 in one message, in parallel, with the Agent tool. Give each one this prompt:
+   1. "You are reviewing the Plan of issue #<n> — not a drafted spec section. Use the 'On a Plan' checks in your 'What you check' section, not the 'On a spec draft' ones. You did not write this plan. Report findings only; do not edit files."
+   2. Inputs: the worktree path, the `## Plan` block's content, any new/changed `docs/adr/*.md` files (with the rewritten diff range from step 1, if any), `constitution.md` and each touched module's rules file (per `rules_file_glob`). On round 2, also the prior findings to re-check and the follow-up findings already filed.
+4. Wait for every role you launched. Merge their blocking findings into one list, labelled by reviewer (`pm:`, `tech-lead:`, `qa:`).
+5. Send the writer `PLAN REVIEW RESULTS:` followed by that list, then every follow-up finding, also labelled by reviewer. If no reviewer has a finding, send `PLAN REVIEW RESULTS: NONE`.
+
+If the Agent tool is unavailable, that is a **Failure**. Never review it yourself.
 
 ## Spec review (`NEEDS_SPEC_REVIEW`)
 
@@ -226,6 +264,14 @@ The implementer never edits a feature file. So after the user approves a new or 
 4. Read the new commit with `git -C <worktree> rev-parse HEAD`.
 5. `SendMessage` to the same implementer: `SCENARIO CHANGED: <commit sha>`. Do not go to the next stage. Read the next final message of the implementer, and loop.
 
+## Replan (`NEEDS_REPLAN`)
+
+The spec writer never patches a solution-impacting discovery in place; it asks for a fresh intent pass instead.
+
+1. Dispatch a fresh `sdd-flow-stage` subagent for the skill `sdd-flow-intent`, with the stage note: "Replan: <the block's `discovery:` line, verbatim>. Issue #<n> already exists; your step 0 Replan case updates it in place — do not create a new issue."
+2. This is a normal Stage 1 dispatch from here on: relay its questions as usual (the Challenge loop may run several rounds). When it reports `DONE`, run **State verification** for stage `intent` — the label is now `sdd:stage:planning`. Go to stage 2 (**Plan**), as the Stages table describes.
+3. The `sdd-flow-draft` subagent that sent `NEEDS_REPLAN` is not resumed. Whatever it already committed to the branch (spec text, scenarios, sub-issue work) stays there; the fresh Plan (step 2) and the Draft pass that follows pick up from it rather than starting over.
+
 ## Independent reviews (`NEEDS_REVIEWS`)
 
 Your cwd is the main checkout, where `HEAD` is `main` — so never pass the block's range as-is. Rewrite it against the feature branch first: `main...HEAD` → `main...sdd/<n>-<slug>`, `<base-sha>..HEAD` → `<base-sha>..sdd/<n>-<slug>`, and give both reviewers the worktree path.
@@ -249,7 +295,7 @@ Wait for **every** review that you launched. You relay only those lines and the 
 Run the check script, with read-only commands only:
 
 ```bash
-python3 ${CLAUDE_PLUGIN_ROOT}/scripts/sdd_check_state.py --issue <n> --stage <intent|draft|tdd|reconcile|pr-validate> [--worktree <worktree>] [--child <c>] [--stopped] --main-checkout <main checkout> --status-file <recorded status file> --main-sha <recorded main SHA>
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/sdd_check_state.py --issue <n> --stage <intent|plan|draft|tdd|reconcile|pr-validate> [--worktree <worktree>] [--child <c>] [--stopped] --main-checkout <main checkout> --status-file <recorded status file> --main-sha <recorded main SHA>
 ```
 
 It checks that the issue is open, the `sdd:stage:*` label against what the stage may leave and the body's `**Stage:**` line against the label, the branch of the worktree, the untouched main checkout (status and `main` SHA recorded at launch) and, with `--child`, that the sub-issue of an `sdd-flow-tdd` subagent is `CLOSED`. Pass `--worktree` once the worktree exists, `--child` after an `sdd-flow-tdd` subagent, and `--stopped` only for an `sdd-flow-pr-validate` `DONE` that carries the line `outcome: stopped by the user`. State verification accepts `complete` after `sdd-flow-pr-validate` only with that line. After such a `DONE` the orchestrator does not offer a retry: it prints `claude --agent sdd-flow "#<n>"` as the resume command and stops. A `DONE` with the sub-issue still open is a **Failure**. Never dispatch another tdd subagent on the same sub-issue unless the user chooses `Retry`.
@@ -269,22 +315,24 @@ If `sdd-flow-intent` returns a `NEEDS_INPUT` proposing to split the intent into 
 
 ## Resume (`#<n>`)
 
-Run `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/sdd_route.py <n>` on every resume and again after every reconcile. Act on its one line. Exit 2 is a **Failure**. Pass `--after-sweep` after the **Open decisions sweep** and after the reconcile of a stage 3 sub-issue: the sweep runs only on a resume and before Checkpoint B, so a `Leave open` answer is not asked again after each sub-issue. When the run after the reconcile of a sub-issue prints `checkpoint-b`, run the script once more without `--after-sweep`, so the sweep runs before Checkpoint B.
+Run `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/sdd_route.py <n>` on every resume and again after every reconcile. Act on its one line. Exit 2 is a **Failure**. Pass `--after-sweep` after the **Open decisions sweep** and after the reconcile of a stage 4 sub-issue: the sweep runs only on a resume and before Checkpoint B, so a `Leave open` answer is not asked again after each sub-issue. When the run after the reconcile of a sub-issue prints `checkpoint-b`, run the script once more without `--after-sweep`, so the sweep runs before Checkpoint B.
 
 | Route | Action |
 |---|---|
 | `stop   reason: <r>` | Report the reason (`not-sdd`, `closed`, `stage-label`, or `pr-exists` with its `url`) and stop. |
 | `pr-only` | A fresh `sdd-flow-pr-validate` subagent with stage note "The issue is already verified; do only step 7 (push and open the PR)." |
 | `decisions   count: <c>` | Run the **Open decisions sweep**, then run the script again with `--after-sweep`. |
+| `checkpoint-plan   plan: <k>` | **Checkpoint Plan** for plan `<k>`. On `Approve`, dispatch a fresh `sdd-flow-plan` subagent with the stage note "Approval resume: the user approved plan <k>." |
+| `stage-plan` | Stage 2 (dispatch `sdd-flow-plan`). |
 | `checkpoint-a   draft: <k>` | **Checkpoint A** for draft `<k>`. On `Approve`, dispatch a fresh `sdd-flow-draft` subagent with the stage note "Approval resume: the user approved draft <k>." It also checks off the lower open lines. A resume loses the scoped base and the scoped sub-issues, so Checkpoint A shows the full diff from the merge base; keep them only in a session that ran the scoped draft. On changes, step 5 of Checkpoint A applies as a full repeat, without a "Scoped draft repeat" note. That repeat writes the requested changes into the whole section, then asks the user to confirm the `Scenarios:` lists of the open sub-issues. |
 | `scoped-draft   sub-issues: <a>,<b>` | **Scoped draft** |
-| `stage-2` | Stage 2. With `sub-issues:` a scoped draft stopped after it cleared the labels: stage 2 asks the user to confirm the `Scenarios:` lists, and Checkpoint A shows the full diff from the merge base. |
-| `stage-3   sub-issue: <c>` | Stage 3 on sub-issue `<c>`; `none` means `sdd-flow-tdd` creates the sub-issues. |
-| `reconcile-first` | Stage 3, a reconcile subagent first. |
+| `stage-2` | Stage 3 (dispatch `sdd-flow-draft`) — this route name is unchanged from before the Plan stage existed; it now fires from both `plan-approved` (a fresh draft) and `drafting-spec` with no open sub-issues (a resumed draft). With `sub-issues:` a scoped draft stopped after it cleared the labels: stage 3 asks the user to confirm the `Scenarios:` lists, and Checkpoint A shows the full diff from the merge base. |
+| `stage-3   sub-issue: <c>` | Stage 4 on sub-issue `<c>`; `none` means `sdd-flow-tdd` creates the sub-issues. |
+| `reconcile-first` | Stage 4, a reconcile subagent first. |
 | `checkpoint-b` | **Checkpoint B** |
 
 The script prints neither the worktree nor the branch: read the body with `gh issue view <n> --json body` and take them from its `**Worktree:**` (repo-relative — make it absolute) and `**Branch:**` lines.
 
 ## Token discipline
 
-Keep your own context small: no source files or full diffs except checkpoint A's spec and feature-file diff (with the step-definition stubs). Subagents carry stage context; you carry only the issue number, slug, worktree, branch, current stage, and open sub-issue list.
+Keep your own context small: no source files or full diffs except Checkpoint Plan's `## Plan` block and ADR diff, and Checkpoint A's spec and feature-file diff (with the step-definition stubs). Subagents carry stage context; you carry only the issue number, slug, worktree, branch, current stage, and open sub-issue list.

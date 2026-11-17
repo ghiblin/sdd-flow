@@ -8,9 +8,9 @@ state_backend: github-issues
 tiers:
   classification: auto
   profiles:
-    0: { spec_review_roles: [], code_review_rounds: 1, gherkin_required: false, batch_mode: true, refactor_step: false }
-    1: { spec_review_roles: [tech-lead], code_review_rounds: 1, gherkin_required: false, batch_mode: false, refactor_step: true }
-    2: { spec_review_roles: [pm, tech-lead, qa], code_review_rounds: 2, gherkin_required: true, batch_mode: false, refactor_step: true }
+    0: { plan_review_roles: [], spec_review_roles: [], code_review_rounds: 1, gherkin_required: false, batch_mode: true, refactor_step: false }
+    1: { plan_review_roles: [tech-lead], spec_review_roles: [tech-lead], code_review_rounds: 1, gherkin_required: false, batch_mode: false, refactor_step: true }
+    2: { plan_review_roles: [pm, tech-lead, qa], spec_review_roles: [pm, tech-lead, qa], code_review_rounds: 2, gherkin_required: true, batch_mode: false, refactor_step: true }
 notifications:
   desktop: false
   push: false
@@ -27,6 +27,7 @@ security_commands: []
 |---|---|---|
 | `state_backend` | `github-issues` | The resumable state machine backend. **Only implemented value.** `local-file` is tracked — see [Unimplemented choices](#unimplemented-choices) below. |
 | `tiers.classification` | `auto` | `auto`: `sdd-flow-intent` skips the confirmation question when its classifier is confident (no ambiguity signal in its rationale) and just records the tier. `always-ask`: always ask, even when confident. |
+| `tiers.profiles.<0\|1\|2>.plan_review_roles` | see table above | Which of `pm`/`tech-lead`/`qa` run in the Plan review loop (`sdd-flow-plan`, before any spec text exists). An empty list means no plan review at all (Tier 0). Independent of `spec_review_roles` — a project can tune the two gates separately, though they share the same default per tier. |
 | `tiers.profiles.<0\|1\|2>.spec_review_roles` | see table above | Which of `pm`/`tech-lead`/`qa` run in the Spec review loop. An empty list means no spec review at all (Tier 0). |
 | `tiers.profiles.<0\|1\|2>.code_review_rounds` | see table above | Max review rounds before an unresolved finding becomes a user decision instead of another round. |
 | `tiers.profiles.<0\|1\|2>.gherkin_required` | see table above | Whether `sdd-flow-draft` must write `@wip` BDD scenarios for this tier. |

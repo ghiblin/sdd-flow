@@ -77,6 +77,17 @@ class RawCloseAndLabels(unittest.TestCase):
         cmd = "python3 .claude/skills/sdd-draft/scripts/set-stage.py 363 spec-approved"
         self.assertIsNone(guard.decide(bash(cmd)))
 
+    def test_raw_plan_approved_label_is_denied(self):
+        cmd = "gh issue edit 363 --add-label sdd:stage:plan-approved"
+        self.assertIsNotNone(guard.decide(bash(cmd)))
+        self.assertIsNotNone(guard.decide(bash("gh issue edit 363 --add-label SDD:Stage:Plan-Approved")))
+
+    def test_set_stage_plan_approved_is_allowed_with_no_gate_marker(self):
+        # plan-approved is a review-consensus gate like spec-approved, not a
+        # build-gate assertion: it needs no clean tree or gate marker.
+        cmd = "python3 .claude/skills/sdd-flow-plan/scripts/set-stage.py 363 plan-approved"
+        self.assertIsNone(guard.decide(bash(cmd)))
+
     def test_given_non_bash_tool_when_checked_then_allowed(self):
         data = {"tool_name": "Read", "tool_input": {"file_path": "gh issue close"}}
         self.assertIsNone(guard.decide(data))

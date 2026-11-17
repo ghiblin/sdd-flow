@@ -2,8 +2,11 @@
 """Move an SDD main issue to a stage: swap the `sdd:stage:*` label and the `**Stage:**` line.
 
 Usage:
-  set-stage.py <issue-number> <drafting-spec|spec-approved|implementing|complete|verified>
+  set-stage.py <issue-number> <planning|plan-approved|drafting-spec|spec-approved|implementing|complete|verified>
 
+`plan-approved` is allowed only from `planning` (or again from `plan-approved`,
+a no-op re-run), and only when the highest `Approve the plan? (plan <k>)` line
+of `## Open decisions` is checked with the resolution `yes` or `approved`.
 `spec-approved` is allowed only from `drafting-spec` (or again from
 `spec-approved`, a no-op re-run), and only when the highest
 `Approve the spec section? (draft <k>)` line of `## Open decisions` is checked
@@ -29,10 +32,22 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from open_decisions import MARKER, SEP, parse, split_block  # noqa: E402
 
-STAGES = ["drafting-spec", "spec-approved", "implementing", "complete", "verified"]
+STAGES = [
+    "planning",
+    "plan-approved",
+    "drafting-spec",
+    "spec-approved",
+    "implementing",
+    "complete",
+    "verified",
+]
+PLAN_APPROVED_FROM = {"planning", "plan-approved"}
 IMPLEMENTING_FROM = {"spec-approved", "implementing", "complete"}
 SPEC_APPROVED_FROM = {"drafting-spec", "spec-approved"}
-APPROVAL_RE = re.compile(
+PLAN_APPROVAL_RE = re.compile(
+    r"^Approve the plan\? \(plan (\d+)\)(?:" + re.escape(SEP.rstrip()) + r"(?: (.*))?)?$"
+)
+SPEC_APPROVAL_RE = re.compile(
     r"^Approve the spec section\? \(draft (\d+)\)(?:" + re.escape(SEP.rstrip()) + r"(?: (.*))?)?$"
 )
 STAGE_PREFIX = "sdd:stage:"
@@ -71,18 +86,18 @@ def decision_lines(number: str, body: str) -> list[str]:
     return split_block(number, body)[1]
 
 
-def approval_met(number: str, body: str) -> bool:
-    """True when the highest-numbered approval line of `## Open decisions` is checked and resolved `yes` or `approved`."""
+def _approval_met(number: str, body: str, pattern: re.Pattern[str], label: str) -> bool:
+    """True when the highest-numbered approval line matching `pattern` is checked and resolved `yes` or `approved`."""
     items = decision_lines(number, body)
     lines = []
     for item in items:
         state, text = parse(item)
-        match = APPROVAL_RE.match(text) if state else None
+        match = pattern.match(text) if state else None
         if match:
             lines.append((int(match.group(1)), state == "checked", match.group(2) or ""))
     if not lines:
         raise SystemExit(
-            f"issue #{number}: no `Approve the spec section? (draft <k>)` line in the "
+            f"issue #{number}: no `{label}` line in the "
             "`## Open decisions` block (the block ends at the next heading or `<!-- sdd:end -->`)"
         )
     _, checked, resolution = max(lines, key=lambda line: line[0])
@@ -92,10 +107,15 @@ def approval_met(number: str, body: str) -> bool:
 def check_transition(number: str, stage: str, body: str, labels: set[str]) -> None:
     """Exit 1 with the reason when the move to `stage` is not allowed."""
     current = {l[len(STAGE_PREFIX):] for l in labels if l.startswith(STAGE_PREFIX)}
-    if stage == "spec-approved":
+    if stage == "plan-approved":
+        if not current & PLAN_APPROVED_FROM:
+            raise SystemExit(f"issue #{number}: plan-approved is allowed only from planning or plan-approved")
+        if not _approval_met(number, body, PLAN_APPROVAL_RE, "Approve the plan? (plan <k>)"):
+            raise SystemExit(f"issue #{number}: the plan is not approved")
+    elif stage == "spec-approved":
         if not current & SPEC_APPROVED_FROM:
             raise SystemExit(f"issue #{number}: spec-approved is allowed only from drafting-spec or spec-approved")
-        if not approval_met(number, body):
+        if not _approval_met(number, body, SPEC_APPROVAL_RE, "Approve the spec section? (draft <k>)"):
             raise SystemExit(f"issue #{number}: the spec section is not approved")
     elif stage == "implementing" and not current & IMPLEMENTING_FROM:
         raise SystemExit(

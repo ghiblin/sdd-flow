@@ -42,13 +42,14 @@ class FakeGh:
 
 
 class CreateIssue(unittest.TestCase):
-    def run_script(self, gh, decisions=()):
+    def run_script(self, gh, decisions=(), resolved_decisions=()):
         create_issue.run_gh = gh
         return create_issue.create_issue(
             slug="add-router",
             intent="Add a router — with arrows → and Niccolò",
             spec_files=["docs/specs/crates/dietpal-agent.md", "docs/specs/server/chat-api.md"],
             decisions=list(decisions),
+            resolved_decisions=list(resolved_decisions),
         )
 
     def test_given_an_intent_when_created_then_issue_has_feature_and_stage_labels(self):
@@ -56,7 +57,7 @@ class CreateIssue(unittest.TestCase):
         self.run_script(gh)
         create_args = gh.calls[0][0]
         self.assertEqual(create_args[:4], ["issue", "create", "--title", "add-router"])
-        self.assertEqual(gh.labels, ["sdd:feature", "sdd:stage:drafting-spec"])
+        self.assertEqual(gh.labels, ["sdd:feature", "sdd:stage:planning"])
 
     def test_given_a_created_issue_then_body_branch_carries_the_real_number(self):
         gh = FakeGh(number=77)
@@ -72,14 +73,49 @@ class CreateIssue(unittest.TestCase):
             gh.body,
             "<!-- sdd:begin -->\n"
             "**Intent:** Add a router — with arrows → and Niccolò\n"
-            "**Stage:** drafting-spec\n"
+            "**Stage:** planning\n"
             "**Worktree:** .claude/worktrees/add-router\n"
             "**Branch:** sdd/5-add-router\n"
             "**Spec files:** docs/specs/crates/dietpal-agent.md, docs/specs/server/chat-api.md\n"
+            "## Plan\n"
+            "_not yet planned_\n"
             "## Open decisions\n"
             "- [ ] Which trait?\n"
             "<!-- sdd:end -->\n",
         )
+
+    def test_resolved_decisions_render_before_open_ones_as_checked_lines(self):
+        gh = FakeGh(number=5)
+        self.run_script(
+            gh,
+            decisions=["Which trait?"],
+            resolved_decisions=["Scope boundary settled? -> yes, only module X"],
+        )
+        self.assertIn(
+            "## Open decisions\n"
+            "- [x] Scope boundary settled? → yes, only module X\n"
+            "- [ ] Which trait?\n"
+            "<!-- sdd:end -->\n",
+            gh.body,
+        )
+
+    def test_resolved_decisions_alone_skip_the_none_placeholder(self):
+        gh = FakeGh(number=5)
+        self.run_script(gh, resolved_decisions=["Settled already? -> yes"])
+        self.assertIn("## Open decisions\n- [x] Settled already? → yes\n<!-- sdd:end -->\n", gh.body)
+        self.assertNotIn("_none_", gh.body)
+
+    def test_a_resolved_decision_without_the_separator_is_refused_before_any_gh_call(self):
+        gh = FakeGh()
+        with self.assertRaises(SystemExit):
+            self.run_script(gh, resolved_decisions=["no separator here"])
+        self.assertEqual(gh.calls, [])
+
+    def test_a_resolved_decision_whose_question_contains_an_arrow_is_refused(self):
+        gh = FakeGh()
+        with self.assertRaises(SystemExit):
+            self.run_script(gh, resolved_decisions=["Q → still open? -> yes"])
+        self.assertEqual(gh.calls, [])
 
     def test_no_decisions_renders_the_none_placeholder(self):
         gh = FakeGh()
@@ -227,6 +263,26 @@ class Cli(unittest.TestCase):
         self.assertEqual(out.getvalue().strip(), "9")
         self.assertIn("- [ ] Q1?\n- [ ] Q2?\n", gh.body)
         self.assertIn("**Spec files:** docs/specs/domain/patient.md, docs/specs/domain/task.md\n", gh.body)
+
+    def test_resolved_decision_flag_renders_a_checked_line(self):
+        gh = FakeGh(number=9)
+        create_issue.run_gh = gh
+        import contextlib
+        import io
+
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            create_issue.main(
+                [
+                    "--slug", "x-y",
+                    "--intent", "do it",
+                    "--spec-file", "docs/specs/domain/patient.md",
+                    "--resolved-decision", "Settled already? -> yes",
+                    "--decision", "Q1?",
+                ]
+            )
+        self.assertEqual(out.getvalue().strip(), "9")
+        self.assertIn("- [x] Settled already? → yes\n- [ ] Q1?\n", gh.body)
 
 
 if __name__ == "__main__":

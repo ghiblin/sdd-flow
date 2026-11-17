@@ -65,8 +65,13 @@ class Tests(Run):
         for labels in ((), ("sdd:stage:drafting-spec", "sdd:stage:implementing")):
             self.assert_fail(*self.run_check(["--issue", "7", "--stage", "intent"], labels=labels))
 
-    def test_intent_leaves_drafting_spec(self):
-        self.assert_ok(*self.run_check(["--issue", "7", "--stage", "intent"]))
+    def test_intent_leaves_planning(self):
+        self.assert_ok(*self.run_check(["--issue", "7", "--stage", "intent"],
+                                       labels=("sdd:stage:planning",)))
+
+    def test_plan_leaves_plan_approved(self):
+        self.assert_ok(*self.run_check(["--issue", "7", "--stage", "plan"],
+                                       labels=("sdd:stage:plan-approved",)))
 
     def test_draft_leaves_spec_approved(self):
         self.assert_ok(*self.run_check(["--issue", "7", "--stage", "draft"],
@@ -91,13 +96,14 @@ class Tests(Run):
         self.assert_fail(*self.run_check(["--issue", "7", "--stage", "tdd"],
                                          labels=("sdd:stage:complete",)))
         argv = ["--issue", "7", "--stage", "intent"]
-        self.assert_fail(*self.run_check(argv, body=BODY.replace("x", "implementing")))
-        self.assert_fail(*self.run_check(argv, body="**Branch:** sdd/7-demo\n"))
-        self.assert_fail(*self.run_check(argv, issue_state="CLOSED"))
+        planning = {"labels": ("sdd:stage:planning",)}
+        self.assert_fail(*self.run_check(argv, body=BODY.replace("x", "implementing"), **planning))
+        self.assert_fail(*self.run_check(argv, body="**Branch:** sdd/7-demo\n", **planning))
+        self.assert_fail(*self.run_check(argv, issue_state="CLOSED", **planning))
         self.assert_fail(*self.run_check(argv + ["--worktree", "/w"], issue_state="CLOSED",
-                                         body="**Stage:** drafting-spec\n"))
-        twice = BODY.replace("x", "drafting-spec") + "**Stage:** drafting-spec\n"
-        self.assert_fail(*self.run_check(argv, body=twice))
+                                         body="**Stage:** planning\n", **planning))
+        twice = BODY.replace("x", "planning") + "**Stage:** planning\n"
+        self.assert_fail(*self.run_check(argv, body=twice, **planning))
 
     def test_draft_with_needs_spec_fails(self):
         self.assert_fail(*self.run_check(["--issue", "7", "--stage", "draft"],
@@ -113,8 +119,9 @@ class Tests(Run):
 
     def test_wrong_branch_fails(self):
         self.assert_fail(*self.run_check(["--issue", "7", "--stage", "intent", "--worktree", "/w"],
-                                         branch="other"))
-        self.assert_ok(*self.run_check(["--issue", "7", "--stage", "intent", "--worktree", "/w"]))
+                                         branch="other", labels=("sdd:stage:planning",)))
+        self.assert_ok(*self.run_check(["--issue", "7", "--stage", "intent", "--worktree", "/w"],
+                                       labels=("sdd:stage:planning",)))
 
     def test_main_status_changed_fails(self):
         import tempfile
@@ -123,8 +130,9 @@ class Tests(Run):
             rec.write_text("?? a\n")
             argv = ["--issue", "7", "--stage", "intent", "--main-checkout", "/m",
                     "--status-file", str(rec), "--main-sha", "abc"]
-            self.assert_ok(*self.run_check(argv, status="?? a"))
-            self.assert_fail(*self.run_check(argv, status="?? a\n?? b"))
+            labels = ("sdd:stage:planning",)
+            self.assert_ok(*self.run_check(argv, status="?? a", labels=labels))
+            self.assert_fail(*self.run_check(argv, status="?? a\n?? b", labels=labels))
 
     def test_main_moved_fails(self):
         import tempfile
@@ -133,15 +141,15 @@ class Tests(Run):
             rec.write_text("")
             argv = ["--issue", "7", "--stage", "intent", "--main-checkout", "/m",
                     "--status-file", str(rec), "--main-sha", "abc"]
-            self.assert_fail(*self.run_check(argv, main_sha="def"))
+            self.assert_fail(*self.run_check(argv, main_sha="def", labels=("sdd:stage:planning",)))
 
     def test_open_child_fails(self):
         argv = ["--issue", "7", "--stage", "intent", "--child", "9"]
-        self.assert_fail(*self.run_check(argv, child_state="OPEN"))
+        self.assert_fail(*self.run_check(argv, child_state="OPEN", labels=("sdd:stage:planning",)))
 
     def test_all_checks_pass(self):
         self.assert_ok(*self.run_check(["--issue", "7", "--stage", "intent", "--worktree", "/w",
-                                        "--child", "9"]))
+                                        "--child", "9"], labels=("sdd:stage:planning",)))
 
     def test_usage_and_tool_errors_exit_2(self):
         base = ["--issue", "7"]

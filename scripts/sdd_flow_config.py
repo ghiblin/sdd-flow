@@ -48,28 +48,28 @@ IMPLEMENTED: dict[str, dict[str, str | None]] = {
 
 DEFAULT_PROFILES: dict[int, dict[str, Any]] = {
     0: {
+        "plan_review_roles": [],
         "spec_review_roles": [],
         "code_review_rounds": 1,
         "gherkin_required": False,
         "batch_mode": True,
         "refactor_step": False,
-        "adr_check": False,
     },
     1: {
+        "plan_review_roles": ["tech-lead"],
         "spec_review_roles": ["tech-lead"],
         "code_review_rounds": 1,
         "gherkin_required": False,
         "batch_mode": False,
         "refactor_step": True,
-        "adr_check": False,
     },
     2: {
+        "plan_review_roles": ["pm", "tech-lead", "qa"],
         "spec_review_roles": ["pm", "tech-lead", "qa"],
         "code_review_rounds": 2,
         "gherkin_required": True,
         "batch_mode": False,
         "refactor_step": True,
-        "adr_check": True,
     },
 }
 
