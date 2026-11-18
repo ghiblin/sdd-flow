@@ -1,5 +1,9 @@
 # Release notes
 
+## v0.2.1 (2026-11-18)
+
+- New `sdd-flow-merge-pr` skill (`/sdd-flow:sdd-flow-merge-pr <worktree-name>`) wrapping `merge_pr.py`. Previously the orchestrator's final report told the user that `${CLAUDE_PLUGIN_ROOT}/scripts/merge_pr.py` "handles merge + teardown" — but that variable only resolves when Claude Code loads plugin markdown, never in the user's own shell, so there was no actual way to run it once installed as a plugin.
+
 ## v0.2.0 (2026-11-17)
 
 New **Plan** stage and **Plan Review**, inserted between `sdd-flow-intent` and `sdd-flow-draft`, plus a backtrack path from drafting back to intent — a rework of the pipeline's front half based on real-world feedback:
