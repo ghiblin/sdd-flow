@@ -1,5 +1,9 @@
 # Release notes
 
+## v0.2.4 (2026-11-20)
+
+- Round 2 of Plan review and Spec review now re-dispatches only the reviewer role(s) that had a blocking finding in round 1, instead of the full tier-scoped panel read fresh from `get-tier-profile` each round. A role that gave round 1 a clean bill is reviewing a diff that is, by construction, a fix for someone else's finding, so it's skipped on the re-review. Roughly halves reviewer subagent calls on a multi-round plan/spec review loop (the common case being 1-2 roles out of 3 flagging something) ([#23](https://github.com/ghiblin/sdd-flow/issues/23)).
+
 ## v0.2.3 (2026-11-20)
 
 - `sdd-flow-intent`'s Complexity gate (step 4) now actively scans for a multi-layer/multi-service signal — an intent that names two or more layers or services as separate deliverables (e.g. "backend doesn't exist yet, plus frontend and a fake email service") — and treats it as a **default split**, instead of leaving the split judgment entirely to open-ended "does it decompose?" discretion. Root cause: a 2026-11-19 diet-pal session ran exactly this shape of intent as one monolithic Tier-2 run (~12h15m, 41 subagents, full PM/tech-lead/QA review fan-out applied twice across the whole scope) because the old wording never fired on the common case of explicitly-named separate deliverables ([#21](https://github.com/ghiblin/sdd-flow/issues/21)).
