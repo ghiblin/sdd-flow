@@ -1,5 +1,9 @@
 # Release notes
 
+## v0.2.2 (2026-11-20)
+
+- The orchestrator now offers to stop and print the resume command (`claude --agent sdd-flow "#<n>"`) at two more boundaries — after Checkpoint Plan's approval and after Checkpoint A's approval — not only at Checkpoint B. Previously it only ever exited at Checkpoint B or on Failure, so a Plan review loop, a Draft review loop and several Implement sub-issues could all pile into one long-lived session that kept re-paying the cache-read cost of its own growing transcript. Since `claude --agent sdd-flow "#<n>"` already resumes correctly from GitHub + worktree state (used by Checkpoint B and Failure already), this reuses the same resume path, just offered more often ([#22](https://github.com/ghiblin/sdd-flow/issues/22)).
+
 ## v0.2.1 (2026-11-18)
 
 - New `sdd-flow-merge-pr` skill (`/sdd-flow:sdd-flow-merge-pr <worktree-name>`) wrapping `merge_pr.py`. Previously the orchestrator's final report told the user that `${CLAUDE_PLUGIN_ROOT}/scripts/merge_pr.py` "handles merge + teardown" — but that variable only resolves when Claude Code loads plugin markdown, never in the user's own shell, so there was no actual way to run it once installed as a plugin.
