@@ -1,5 +1,9 @@
 # Release notes
 
+## v0.2.3 (2026-11-20)
+
+- `sdd-flow-intent`'s Complexity gate (step 4) now actively scans for a multi-layer/multi-service signal — an intent that names two or more layers or services as separate deliverables (e.g. "backend doesn't exist yet, plus frontend and a fake email service") — and treats it as a **default split**, instead of leaving the split judgment entirely to open-ended "does it decompose?" discretion. Root cause: a 2026-11-19 diet-pal session ran exactly this shape of intent as one monolithic Tier-2 run (~12h15m, 41 subagents, full PM/tech-lead/QA review fan-out applied twice across the whole scope) because the old wording never fired on the common case of explicitly-named separate deliverables ([#21](https://github.com/ghiblin/sdd-flow/issues/21)).
+
 ## v0.2.2 (2026-11-20)
 
 - The orchestrator now offers to stop and print the resume command (`claude --agent sdd-flow "#<n>"`) at two more boundaries — after Checkpoint Plan's approval and after Checkpoint A's approval — not only at Checkpoint B. Previously it only ever exited at Checkpoint B or on Failure, so a Plan review loop, a Draft review loop and several Implement sub-issues could all pile into one long-lived session that kept re-paying the cache-read cost of its own growing transcript. Since `claude --agent sdd-flow "#<n>"` already resumes correctly from GitHub + worktree state (used by Checkpoint B and Failure already), this reuses the same resume path, just offered more often ([#22](https://github.com/ghiblin/sdd-flow/issues/22)).
